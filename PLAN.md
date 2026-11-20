@@ -145,6 +145,9 @@ Die App zeigt beim Import an, wenn ein Dokument Änderungsverfolgung oder Kommen
 - Modellverwaltung: Import aus Datei, Prüfsumme, Anzeige von Speicherbedarf, Warnung bei zu wenig Arbeitsspeicher.
 - Chat-Route auf den lokalen Dienst umstellen; Prompts und Wiederholungslogik an das gewählte Modell anpassen.
 - Optional: bereits vorhandenes Ollama auf demselben Rechner nutzen.
+- Dokumenttext vorab mitgeben (`PRELOAD_DOCUMENT`) und Kontextgröße fest auf 16.384 Token setzen; beides war im Versuch Voraussetzung für brauchbare Ergebnisse.
+- Versuch: Stufe 1 liefert Muster-Treffer (IBAN, Telefon, E-Mail, Datum) vorab, der Assistent entscheidet nur noch über Rollen und Rechtsgründe. Ziel ist, den Denkmodus abschalten zu können (halbe Laufzeit), ohne dass harte Daten übersehen werden.
+- Fortschrittsanzeige und seitenweises Arbeiten, weil ein Lauf über zwei Seiten 1,5 bis 4,5 Minuten dauert.
 
 **Fertig, wenn:** der Assistent offline ein mehrseitiges Dokument liest und Schwärzungen mit Begründung vorschlägt, auf einem Rechner mit 16 GB Arbeitsspeicher.
 
@@ -179,7 +182,7 @@ Die App zeigt beim Import an, wenn ein Dokument Änderungsverfolgung oder Kommen
 ## 8. Offene Entscheidungen
 
 1. **Repo:** echter GitHub-Fork (zwingend öffentlich, sichtbar mit EasyRedact verknüpft) oder eigenes Repo mit `upstream`-Remote.
-2. **LLM-Modell:** Auswahl nach dem Versuch in Phase 0; Kriterien sind Deutschkenntnis, zuverlässige Werkzeugaufrufe, Lizenz und Speicherbedarf.
+2. **LLM-Modell:** entschieden am 20.11.2026 – Gemma 4 (8 Mrd. Parameter, Apache-2.0) ist das Referenzmodell. Im Versuch (`desktop/spikes/llm-eval.mjs`) lieferte es mit vorab mitgegebenem Dokumenttext (`PRELOAD_DOCUMENT=true`) in 4 von 4 Läufen Vorschläge mit 11 bis 12 von 12 Treffern, bei 3,3 GB geladenem Speicher und 16.384 Token Kontext. Mistral Nemo (kein Werkzeugaufruf) und Qwen 3.5 4B (nur 2 von 4 Läufen) sind ausgeschieden. Offen: Tempo (2,5 bis 3,5 Minuten für zwei Seiten) und ein Test mit echten, längeren Dokumenten.
 3. **Sitzungsdaten:** EasyRedact speichert Dokumente bis zu sechs Monate lokal. Für LocalRedact steht zur Wahl: beibehalten, kürzen oder standardmäßig gar nicht speichern.
 4. **Sprachen:** alle sieben Sprachen von EasyRedact behalten oder zunächst nur Deutsch und Englisch pflegen.
 5. **Signierung:** Apple-Developer-Konto und Windows-Zertifikat müssen vor Phase 5 vorhanden sein.

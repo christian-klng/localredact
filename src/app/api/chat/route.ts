@@ -21,9 +21,9 @@ function send(ctrl: SSEController, event: Record<string, unknown>) {
   ctrl.enqueue(enc.encode(`data: ${JSON.stringify(event)}\n\n`))
 }
 
-async function* streamCompletion(client: any, model: string, messages: ApiChatMessage[], toolList: any[]) {
+async function* streamCompletion(client: any, model: string, messages: ApiChatMessage[], toolList: any[], extra: Record<string, unknown> = {}) {
   const stream = await client.chat.completions.create({
-    model, messages, tools: toolList, stream: true,
+    model, messages, tools: toolList, stream: true, ...extra,
   })
   for await (const chunk of stream) yield chunk
 }
@@ -46,6 +46,11 @@ export async function POST(req: Request) {
   const isLocal = aiMode === 'local'
   const { client, model: modelName } = getClient(isLocal ? 'local' : 'cloud')
   const activeTools = [...tools, readDocumentsTool]
+  // Thinking models spend most of their time reasoning before each reply. On
+  // local hardware that dominates the wait, so it can be turned down or off
+  // (e.g. LOCAL_LLM_REASONING_EFFORT=none).
+  const reasoningEffort = isLocal ? process.env.LOCAL_LLM_REASONING_EFFORT : undefined
+  const completionOptions = reasoningEffort ? { reasoning_effort: reasoningEffort } : {}
 
   const stream = new ReadableStream({
     async start(ctrl) {
@@ -65,6 +70,22 @@ export async function POST(req: Request) {
           })
         }
 
+        // Small local models often never call read_documents and instead ask the
+        // user to upload a document that is already there. With PRELOAD_DOCUMENT
+        // the conversation starts as if the model had made that call itself, so
+        // the text is in front of it from the first turn.
+        const alreadyRead = apiMessages.some(m => m.tool_calls?.some(tc => tc.function.name === 'read_documents'))
+        if (process.env.PRELOAD_DOCUMENT === 'true' && documentPages?.length && !alreadyRead) {
+          const read = executeReadDocuments(documentPages)
+          if (read.success) {
+            const id = 'preloaded_read_documents'
+            apiMessages.push(
+              { role: 'assistant', content: null, tool_calls: [{ id, type: 'function', function: { name: 'read_documents', arguments: '{}' } }] },
+              { role: 'tool', tool_call_id: id, content: JSON.stringify(read.data) },
+            )
+          }
+        }
+
         let iterations = 0
         let emptyRetries = 0
         const MAX_EMPTY_RETRIES = 2
@@ -76,6 +97,10 @@ export async function POST(req: Request) {
         // forced nudges make the retry the default instead of leaving it to the
         // model's initiative, the same way empty completions are already handled.
         let unlocatableRetries = 0
+        // Set once suggest_redactions has actually applied something in this
+        // request. The model's closing summary ("I've suggested 12 redactions")
+        // is then true, not an empty claim, and must not trigger another round.
+        let suggestionsApplied = false
         const MAX_UNLOCATABLE_RETRIES = 2
         while (iterations < 20) {
           iterations++
@@ -84,7 +109,7 @@ export async function POST(req: Request) {
           let toolCalls: ApiChatMessage['tool_calls'] = []
           const toolCallArgs = new Map<number, string>()
 
-          for await (const chunk of streamCompletion(client, modelName, apiMessages, activeTools)) {
+          for await (const chunk of streamCompletion(client, modelName, apiMessages, activeTools, completionOptions)) {
             if (chunk.choices?.[0]?.finish_reason) finishReason = chunk.choices[0].finish_reason
             const delta = chunk.choices?.[0]?.delta
             if (delta?.content) {
@@ -139,7 +164,7 @@ export async function POST(req: Request) {
                 type: 'error',
                 message: `The model stopped without a reply after ${MAX_EMPTY_RETRIES + 1} attempts (finish_reason: ${finishReason ?? 'unknown'}). This is usually the model getting stuck retrying a tool call rather than a context-length issue — try asking again or rephrasing.`,
               })
-            } else if (SUGGESTS_REDACTIONS_WITHOUT_CALLING.test(assistantContent)) {
+            } else if (!suggestionsApplied && SUGGESTS_REDACTIONS_WITHOUT_CALLING.test(assistantContent)) {
               // The model described making suggestions in prose without an actual
               // suggest_redactions call — nothing was applied. The prose is already
               // streamed to the client as text, but the tool call itself never
@@ -223,6 +248,7 @@ export async function POST(req: Request) {
             }
 
             if (name === 'suggest_redactions') {
+              if (special) suggestionsApplied = true
               if (unresolvedCount > 0 && unlocatableRetries < MAX_UNLOCATABLE_RETRIES) {
                 unlocatableRetries++
                 console.warn('[chat] suggest_redactions left unresolved entries', { unresolvedCount, retry: unlocatableRetries })

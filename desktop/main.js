@@ -7,6 +7,9 @@ const net = require('node:net')
 const http = require('node:http')
 const crypto = require('node:crypto')
 const { convertDocx } = require('./docx/convert')
+const { lockDownNetwork, blockedRequests } = require('./network/lockdown')
+
+lockDownNetwork()
 
 const HOST = '127.0.0.1'
 const LOCALES = ['en', 'de', 'fr', 'es', 'ru', 'ar', 'zh']
@@ -19,6 +22,10 @@ const serverDir = app.isPackaged
   : path.join(__dirname, '..', '.next', 'standalone')
 
 let server = null
+// Connections the server process tried to open to another machine and its
+// network guard refused.
+let serverBlocked = 0
+let serverGuardActive = false
 
 function freePort() {
   return new Promise((resolve, reject) => {
@@ -94,7 +101,8 @@ function startDocxService() {
 async function startServer() {
   const port = await freePort()
   const docxService = await startDocxService()
-  server = utilityProcess.fork(path.join(serverDir, 'server.js'), [], {
+  // The entry file installs the network guard and then starts the server.
+  server = utilityProcess.fork(path.join(serverDir, 'server-entry.js'), [], {
     cwd: serverDir,
     serviceName: 'LocalRedact Server',
     stdio: 'pipe',
@@ -115,7 +123,11 @@ async function startServer() {
     },
   })
   server.stdout?.on('data', d => process.stdout.write(`[server] ${d}`))
-  server.stderr?.on('data', d => process.stderr.write(`[server] ${d}`))
+  server.stderr?.on('data', d => {
+    serverBlocked += String(d).split('[network-guard] blocked').length - 1
+    if (String(d).includes('[network-guard] active')) serverGuardActive = true
+    process.stderr.write(`[server] ${d}`)
+  })
   server.once('exit', code => {
     server = null
     if (!app.isQuitting) {
@@ -137,20 +149,31 @@ async function createWindow(origin) {
     width: 1440,
     height: 900,
     show: !SMOKE,
-    webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false },
+    webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, spellcheck: false },
   })
   // The window only ever shows the bundled app.
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   win.webContents.on('will-navigate', (event, url) => {
     if (new URL(url).origin !== origin) event.preventDefault()
   })
-  await win.loadURL(`${origin}/${pickLocale()}/app`)
+  // The self-test reads German labels, so it does not follow the system language.
+  await win.loadURL(`${origin}/${SMOKE ? 'de' : pickLocale()}/app`)
   return win
 }
 
+// A host that can never exist, used to prove that the block is active without
+// contacting anyone.
+const CONTROL_URL = 'https://network-check.invalid/'
+const NER_TIMEOUT_MS = 5 * 60_000
+
+// Self-test of a build: starts the app, and - given a DOCX - runs the whole
+// path a user would: convert it, open the PDF, let the bundled model analyse
+// it. It fails if any step fails or if anything tried to reach another machine.
 async function smokeTest(win, origin) {
+  const run = script => win.webContents.executeJavaScript(`(async () => { ${script} })()`)
+
   // The app renders client-side, so give the UI a moment to appear.
-  const result = await win.webContents.executeJavaScript(`(async () => {
+  const result = await run(`
     const deadline = Date.now() + 15000
     while (!document.querySelector('button') && Date.now() < deadline)
       await new Promise(r => setTimeout(r, 200))
@@ -161,18 +184,27 @@ async function smokeTest(win, origin) {
       rulesStatus: (await fetch('/api/rules')).status,
       hasBody: !!document.querySelector('button'),
     }
-  })()`)
-  // Optionally push a DOCX through the app's own upload route, which exercises
-  // the server route, the conversion endpoint and the converter together.
+  `)
+  let ok = result.rulesStatus === 200 && result.hasBody
+
+  // The control: a separate window tries to open an outside address. A request
+  // from the app page would not do, because the page's own security policy
+  // refuses it before the network block is even asked.
+  const probe = new BrowserWindow({ show: false, webPreferences: { sandbox: true } })
+  const controlError = await probe.loadURL(CONTROL_URL).then(() => null, err => err.code ?? String(err))
+  probe.destroy()
+
   const docxPath = process.env.LOCALREDACT_SMOKE_DOCX
   if (docxPath) {
     const base64 = fs.readFileSync(docxPath).toString('base64')
-    result.docx = await win.webContents.executeJavaScript(`(async () => {
+    // Convert through the app's own upload route and keep the PDF in the page.
+    result.docx = await run(`
       const bytes = Uint8Array.from(atob(${JSON.stringify(base64)}), c => c.charCodeAt(0))
       const form = new FormData()
       form.append('file', new File([bytes], 'smoke.docx'))
       const res = await fetch('/api/docx', { method: 'POST', body: form })
       const pdf = new Uint8Array(await res.arrayBuffer())
+      window.__smokePdf = pdf
       return {
         status: res.status,
         engine: res.headers.get('X-Docx-Engine'),
@@ -180,10 +212,46 @@ async function smokeTest(win, origin) {
         bytes: pdf.length,
         isPdf: String.fromCharCode(...pdf.slice(0, 5)) === '%PDF-',
       }
-    })()`)
+    `)
+    ok &&= result.docx.isPdf
+
+    if (result.docx.isPdf && result.config?.nerModels === 'local') {
+      // Open the PDF the way a user would and wait for the model's findings.
+      result.ner = await run(`
+        const transfer = new DataTransfer()
+        transfer.items.add(new File([window.__smokePdf], 'smoke.pdf', { type: 'application/pdf' }))
+        const input = document.querySelector('input[type=file]')
+        input.files = transfer.files
+        input.dispatchEvent(new Event('change', { bubbles: true }))
+        const started = Date.now()
+        const count = label => Number((document.body.innerText.match(new RegExp(label + '\\\\s*(\\\\d+)')) ?? [])[1] ?? 0)
+        while (Date.now() - started < ${NER_TIMEOUT_MS}) {
+          if (count('Personen') > 0) break
+          await new Promise(r => setTimeout(r, 500))
+        }
+        return { persons: count('Personen'), addresses: count('Orte'), seconds: Math.round((Date.now() - started) / 1000) }
+      `)
+      ok &&= result.ner.persons > 0
+    } else if (result.docx.isPdf) {
+      result.ner = 'skipped: this build has no bundled model'
+    }
   }
-  console.log(`SMOKE ${JSON.stringify({ origin, ...result })}`)
-  return result.rulesStatus === 200 && result.hasBody && (!docxPath || result.docx.isPdf)
+
+  // Everything the windows or the server tried to reach elsewhere. Only the
+  // deliberate control request may appear, and it must appear.
+  const control = new URL(CONTROL_URL).origin
+  const attempts = blockedRequests()
+  result.network = {
+    controlBlocked: controlError === 'ERR_BLOCKED_BY_CLIENT' && attempts.includes(control),
+    blockedFromWindows: attempts.filter(target => target !== control),
+    serverGuardActive,
+    blockedFromServer: serverBlocked,
+  }
+  ok &&= result.network.controlBlocked && result.network.blockedFromWindows.length === 0
+  ok &&= serverGuardActive && serverBlocked === 0
+
+  console.log(`SMOKE ${JSON.stringify({ ok, origin, ...result })}`)
+  return ok
 }
 
 if (!app.requestSingleInstanceLock()) {

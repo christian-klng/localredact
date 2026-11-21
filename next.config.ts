@@ -3,6 +3,10 @@ import createNextIntlPlugin from 'next-intl/plugin'
 
 const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts')
 
+// A build that ships the NER model and its runtime itself (the desktop app)
+// has no reason to talk to anyone, so its policy names no outside host at all.
+const offline = process.env.NER_MODELS === 'local'
+
 const securityHeaders = [
   { key: 'X-Frame-Options', value: 'DENY' },
   { key: 'X-Content-Type-Options', value: 'nosniff' },
@@ -14,7 +18,7 @@ const securityHeaders = [
     value: [
       "default-src 'self'",
       // Next.js inline scripts + MuPDF/ONNX WASM require unsafe-eval; jsdelivr hosts ONNX Runtime WASM workers
-      "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://cdn.jsdelivr.net",
+      `script-src 'self' 'unsafe-eval' 'unsafe-inline'${offline ? '' : ' https://cdn.jsdelivr.net'}`,
       "style-src 'self' 'unsafe-inline'",
       // PDF rendering uses blob: and data: URLs
       "img-src 'self' data: blob:",
@@ -22,7 +26,9 @@ const securityHeaders = [
       // Web workers (MuPDF) loaded via blob:
       "worker-src 'self' blob:",
       // API routes + HuggingFace model downloads + ONNX Runtime WASM for browser NLP
-      "connect-src 'self' https://huggingface.co https://cdn-lfs.hf.co https://*.hf.co https://*.xethub.hf.co https://cdn.jsdelivr.net",
+      offline
+        ? "connect-src 'self' blob: data:"
+        : "connect-src 'self' https://huggingface.co https://cdn-lfs.hf.co https://*.hf.co https://*.xethub.hf.co https://cdn.jsdelivr.net",
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'",

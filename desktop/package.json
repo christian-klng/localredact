@@ -13,7 +13,8 @@
     "start": "electron .",
     "smoke": "electron . --smoke",
     "pack": "electron-builder --dir",
-    "dist": "electron-builder"
+    "dist": "electron-builder",
+    "test:network-guard": "node network/check-guard.js"
   },
   "build": {
     "appId": "io.github.localredact",
@@ -24,6 +25,7 @@
     "files": [
       "main.js",
       "docx/**",
+      "network/**",
       "package.json"
     ],
     "mac": {

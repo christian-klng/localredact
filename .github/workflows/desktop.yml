@@ -1,7 +1,8 @@
 name: Desktop build
 
-# Builds the Electron app on all three target systems and checks that the
-# packaged app starts and serves the UI.
+# Builds the Electron app on all three target systems and runs its self-test:
+# the packaged app starts, converts a DOCX, analyses the result with the bundled
+# model - and fails if anything tried to reach another machine.
 on:
   workflow_dispatch:
   pull_request:
@@ -47,12 +48,23 @@ jobs:
       - name: Install desktop dependencies
         run: npm ci
         working-directory: desktop
+      - name: Check server network guard
+        run: npm run test:network-guard
+        working-directory: desktop
+      - name: Restore NER model
+        uses: actions/cache@v4
+        with:
+          path: desktop/models
+          key: ner-model-${{ hashFiles('desktop/fetch-models.mjs') }}
+      - name: Fetch NER model
+        run: npm run fetch:models
+        working-directory: desktop
       - name: Build server
         run: npm run build:server
         working-directory: desktop
       - name: Package app
         run: npm run pack
         working-directory: desktop
-      - name: Smoke test packaged app
+      - name: Self-test packaged app
         shell: bash
         run: ${{ matrix.run }}

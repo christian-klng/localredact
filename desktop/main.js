@@ -26,6 +26,8 @@ let server = null
 // network guard refused.
 let serverBlocked = 0
 let serverGuardActive = false
+// Set when the page reports that the NER model runs in the server process.
+let nerOnServer = false
 
 function freePort() {
   return new Promise((resolve, reject) => {
@@ -156,6 +158,13 @@ async function createWindow(origin) {
   win.webContents.on('will-navigate', (event, url) => {
     if (new URL(url).origin !== origin) event.preventDefault()
   })
+  // In the self-test, problems reported by the page belong in the log.
+  if (SMOKE) {
+    win.webContents.on('console-message', event => {
+      if (String(event.message).includes('using the server instead')) nerOnServer = true
+      if (['warning', 'error'].includes(event.level)) console.log(`[page ${event.level}] ${String(event.message).slice(0, 400)}`)
+    })
+  }
   // The self-test reads German labels, so it does not follow the system language.
   await win.loadURL(`${origin}/${SMOKE ? 'de' : pickLocale()}/app`)
   return win
@@ -164,7 +173,7 @@ async function createWindow(origin) {
 // A host that can never exist, used to prove that the block is active without
 // contacting anyone.
 const CONTROL_URL = 'https://network-check.invalid/'
-const NER_TIMEOUT_MS = 5 * 60_000
+const NER_TIMEOUT_MS = Number(process.env.LOCALREDACT_SMOKE_NER_TIMEOUT_MS ?? 5 * 60_000)
 
 // Self-test of a build: starts the app, and - given a DOCX - runs the whole
 // path a user would: convert it, open the PDF, let the bundled model analyse
@@ -231,6 +240,7 @@ async function smokeTest(win, origin) {
         }
         return { persons: count('Personen'), addresses: count('Orte'), seconds: Math.round((Date.now() - started) / 1000) }
       `)
+      result.ner.ranOn = nerOnServer ? 'server (processor)' : 'window (graphics card)'
       ok &&= result.ner.persons > 0
     } else if (result.docx.isPdf) {
       result.ner = 'skipped: this build has no bundled model'

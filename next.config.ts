@@ -40,7 +40,19 @@ const basePath = process.env.BASE_PATH || ''
 
 const nextConfig: NextConfig = {
   output: 'standalone',
-  serverExternalPackages: ['undici'],
+  // The NER model also runs on the server; its runtime is a native module that
+  // must be loaded from node_modules, not bundled.
+  serverExternalPackages: ['undici', '@huggingface/transformers', 'onnxruntime-node'],
+  // File tracing misses the native runtime: it is an optional import of the
+  // model library and loads its binary by a computed path. Its code is listed
+  // here, with the binaries of this platform only.
+  outputFileTracingIncludes: {
+    '/api/ner': [
+      './node_modules/onnxruntime-node/package.json',
+      './node_modules/onnxruntime-node/dist/**',
+      `./node_modules/onnxruntime-node/bin/napi-v*/${process.platform}/${process.arch}/**`,
+    ],
+  },
   ...(basePath ? { basePath, assetPrefix: basePath, trailingSlash: true } : {}),
   async headers() {
     return [{ source: '/(.*)', headers: securityHeaders }]

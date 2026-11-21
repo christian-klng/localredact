@@ -20,7 +20,7 @@ function reasonForKey(key: CategoryKey): string {
   return ner ?? REGEX_REASON[key.slice(6) as RegexCategory]
 }
 
-const NER_OPTIONS: Array<{ key: CategoryKey; icon: React.ElementType; labelKey: string }> = [
+const ALL_NER_OPTIONS: Array<{ key: CategoryKey; icon: React.ElementType; labelKey: string }> = [
   { key: 'ner:PER', icon: User, labelKey: 'persons' },
   { key: 'ner:ORG', icon: Building2, labelKey: 'organizations' },
   { key: 'ner:LOC', icon: MapPin, labelKey: 'locations' },
@@ -36,6 +36,8 @@ const REGEX_OPTIONS: Array<{ key: CategoryKey; icon: React.ElementType; labelKey
 
 const nerEnabled = localAi === 'ner' || localAi === 'ner-browser'
 const isBrowser = localAi === 'ner-browser'
+// The in-browser model detects personal data only and has no organisation label.
+const NER_OPTIONS = isBrowser ? ALL_NER_OPTIONS.filter(o => o.key !== 'ner:ORG') : ALL_NER_OPTIONS
 
 interface NlpPanelProps {
   documentPages?: DocumentPage[]
@@ -51,6 +53,8 @@ export function NlpPanel({ documentPages, redactions, onSuggestionsReceived, onR
   const [enabled, setEnabled] = useState<Set<CategoryKey>>(() => {
     const s = new Set<CategoryKey>(['regex:phone', 'regex:email', 'regex:iban'])
     if (nerEnabled) s.add('ner:PER')
+    // In-browser, this category holds private addresses rather than any place name.
+    if (isBrowser) s.add('ner:LOC')
     return s
   })
   const [allResults, setAllResults] = useState<RedactionSuggestion[]>([])

@@ -1,9 +1,8 @@
 name: Compliance Docs
 
+# Manual only: the documents are placeholders for now and must not be published
+# as a release automatically.
 on:
-  push:
-    branches: [main]
-    paths: ['docs/compliance/*.md']
   workflow_dispatch:
 
 jobs:
@@ -24,7 +23,7 @@ jobs:
         run: bash docs/compliance/build-docx.sh out
 
       - name: Create zip
-        run: cd out && zip ../EasyRedact_Compliance.zip *.docx
+        run: cd out && zip ../LocalRedact_Compliance.zip *.docx
 
       - name: Upload to release
         env:
@@ -35,4 +34,4 @@ jobs:
             gh release create "$TAG" --title "Compliance-Dokumentation" \
               --notes "Auto-generated DOCX versions of the compliance documentation. Updated on every change to \`docs/compliance/\`."
           fi
-          gh release upload "$TAG" EasyRedact_Compliance.zip --clobber
+          gh release upload "$TAG" LocalRedact_Compliance.zip --clobber

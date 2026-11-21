@@ -1,5 +1,7 @@
 [[Gitlab repo](https://gitlab.opencode.de/datenlabor-bmz/easy-redact) | [Github mirror](https://github.com/datenlabor-bmz)]
 
+> **LocalRedact** is a fork of EasyRedact that is being turned into an offline desktop app for macOS, Windows and Linux. See [PLAN.md](PLAN.md) for the roadmap. The text below still describes the upstream web app and will be rewritten as the fork diverges.
+
 # EasyRedact
 
 AI-assisted PDF redaction tool for German federal ministries (BMZ). Upload a PDF or DOCX, have the AI suggest redactions via an interactive chat, review and adjust them, then export a fully redacted document — everything runs in the browser, documents never leave the machine unless you choose Cloud AI mode.
@@ -186,8 +188,6 @@ AGPL-3.0. This project uses [MuPDF](https://mupdf.com/licensing/) which is licen
 
 ## Credits
 
-Built by the [BMZ DataLab](https://www.bmz-digital.global/en/overview-of-initiatives/the-bmz-data-lab/), the data science unit of Germany's Federal Ministry for Economic Cooperation and Development.
+LocalRedact is a fork of [EasyRedact](https://github.com/datenlabor-bmz/easy-redact), built by the [BMZ DataLab](https://www.bmz-digital.global/en/overview-of-initiatives/the-bmz-data-lab/), the data science unit of Germany's Federal Ministry for Economic Cooperation and Development. The development of EasyRedact was funded by the European Union — [NextGenerationEU](https://next-generation-eu.europa.eu).
 
-Funded by the European Union — [NextGenerationEU](https://next-generation-eu.europa.eu).
-
-<a href="https://next-generation-eu.europa.eu"><img src="public/logo-nextgen-eu.jpg" alt="NextGenerationEU" height="80"></a>  <a href="https://www.bmz-digital.global/en/overview-of-initiatives/the-bmz-data-lab/"><img src="public/logo-datalab.svg" alt="BMZ DataLab" height="60"></a>
+LocalRedact is an independent project and is not affiliated with or endorsed by the BMZ or the European Union.

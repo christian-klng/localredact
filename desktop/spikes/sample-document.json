@@ -1,0 +1,36 @@
+{
+  "name": "Bescheid-Akteneinsicht-2026-0417.pdf",
+  "request": {
+    "pii": "Bitte schwärze alle personenbezogenen Daten von Privatpersonen in diesem Dokument. Namen und dienstliche Kontaktdaten von Behördenmitarbeitern bleiben sichtbar.",
+    "foi": "Bitte prüfe dieses Dokument nach dem IFG und schlage die nötigen Schwärzungen vor. Namen und dienstliche Kontaktdaten von Behördenmitarbeitern bleiben sichtbar."
+  },
+  "answer": "Ja, bitte alle personenbezogenen Daten von Privatpersonen schwärzen. Behördenmitarbeiter bleiben sichtbar. Bitte jetzt die Vorschläge erstellen.",
+  "pages": [
+    {
+      "text": "Stadt Neuenkirchen\nAmt für Bauordnung\nRathausplatz 1, 48485 Neuenkirchen\n\nAktenzeichen: BO-2026-0417\nDatum: 12. März 2026\n\nBescheid über den Antrag auf Akteneinsicht\n\nSehr geehrte Frau Hoffmann,\n\nmit Schreiben vom 3. Februar 2026 haben Sie, Frau Lena Hoffmann, wohnhaft Birkenweg 14, 48485 Neuenkirchen, Akteneinsicht in das Baugenehmigungsverfahren Ihres Nachbarn beantragt.\n\nAntragstellerin: Lena Hoffmann, geboren am 14.07.1984\nTelefon: 05973 884512\nE-Mail: lena.hoffmann@posteo.de\n\nDas Verfahren betrifft das Grundstück Birkenweg 16, Eigentümer Herr Thomas Berger. Herr Berger hat der Einsicht mit Schreiben vom 20. Februar 2026 teilweise widersprochen.\n\nSachbearbeitung: Frau Dr. Petra Lindner, Amt für Bauordnung, Telefon 05973 926-140, E-Mail bauordnung@neuenkirchen.example"
+    },
+    {
+      "text": "Seite 2 zum Bescheid BO-2026-0417\n\nIm Rahmen der Anhörung hat Herr Thomas Berger folgende Angaben gemacht: Er sei unter der Mobilnummer 0171 5550142 und per E-Mail unter t.berger@web.example erreichbar. Als Zeugin für den Grenzverlauf benannte er seine Schwester, Frau Maria Berger-Yilmaz, Lindenstraße 7, 48431 Rheine.\n\nDie Gebühr für die Akteneinsicht beträgt 35,00 Euro. Sie wurde von Frau Hoffmann am 5. März 2026 vom Konto DE89 3704 0044 0532 0130 00 bei der Sparkasse überwiesen.\n\nRechtsbehelfsbelehrung: Gegen diesen Bescheid kann innerhalb eines Monats nach Bekanntgabe Widerspruch bei der Stadt Neuenkirchen, Rathausplatz 1, 48485 Neuenkirchen, erhoben werden.\n\nMit freundlichen Grüßen\nim Auftrag\n\nDr. Petra Lindner\nAmtsleiterin"
+    }
+  ],
+  "expected": [
+    "Lena Hoffmann",
+    "Birkenweg 14",
+    "14.07.1984",
+    "05973 884512",
+    "lena.hoffmann@posteo.de",
+    "Thomas Berger",
+    "Birkenweg 16",
+    "0171 5550142",
+    "t.berger@web.example",
+    "Maria Berger-Yilmaz",
+    "Lindenstraße 7",
+    "DE89 3704 0044 0532 0130 00"
+  ],
+  "mustKeep": [
+    "Petra Lindner",
+    "05973 926-140",
+    "bauordnung@neuenkirchen.example",
+    "Rathausplatz 1"
+  ]
+}

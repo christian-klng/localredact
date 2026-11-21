@@ -1,6 +1,6 @@
-import { getLocale, getTranslations } from 'next-intl/server'
+import { getTranslations } from 'next-intl/server'
 import { Link } from '@/lib/navigation'
-import { Bot, Download, ArrowRight, Check, X, ChevronDown, Cloud, Shield, Server, Globe, Cpu, Zap, FileText, ExternalLink, Trash2, FileUp } from 'lucide-react'
+import { Bot, Download, ArrowRight, Check, X, ChevronDown, Cloud, Shield, Server, Globe, Cpu, Zap, FileText, Trash2, FileUp } from 'lucide-react'
 import { LocaleSwitcher } from '@/components/LocaleSwitcher'
 
 // ── Mini UI mockups (illustrative, intentionally static) ──────────────────────
@@ -303,10 +303,8 @@ function MockDocx() {
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default async function AboutPage() {
-  const locale = await getLocale()
   const t = await getTranslations('About')
   const d = await getTranslations('Deployment')
-  const c = await getTranslations('Compliance')
 
   const features = [
     { title: t('featureAITitle'),       description: t('featureAIDesc'),       mockup: <MockChat /> },
@@ -483,10 +481,6 @@ export default async function AboutPage() {
                   <Check className='h-3 w-3 text-green-600 shrink-0' />
                   {d('premiseDocker')}
                 </div>
-                <div className='flex items-center gap-1.5'>
-                  <Check className='h-3 w-3 text-green-600 shrink-0' />
-                  {d('premiseCompliance')}
-                </div>
               </div>
               <a href='https://github.com/datenlabor-bmz/easy-redact#docker' target='_blank' rel='noopener noreferrer'
                 className='flex items-center justify-center gap-2 border border-primary text-primary px-4 py-2.5 rounded-lg font-medium text-xs hover:bg-primary/5 transition-colors'>
@@ -498,87 +492,20 @@ export default async function AboutPage() {
         </div>
       </section>
 
-      {/* Compliance */}
-      <section className='px-6 py-12 border-t bg-gray-50'>
-        <div className='max-w-4xl mx-auto flex flex-col gap-8'>
-          <div className='text-center flex flex-col gap-2'>
-            <p className='text-xs font-semibold text-gray-400 uppercase tracking-widest'>{c('label')}</p>
-            <h2 className='text-2xl font-bold'>{c('title')}</h2>
-          </div>
-          <p className='text-sm text-gray-500 leading-relaxed text-center max-w-2xl mx-auto'>{c('desc')}</p>
-          {locale === 'de' ? (
-            <div className='grid grid-cols-1 md:grid-cols-3 gap-5'>
-              {([
-                { title: c('systemTitle'), docs: [
-                  { key: '01', file: '01_systemdokumentation.md', label: c('doc01') },
-                  { key: '02', file: '02_c4_architektur.md', label: c('doc02') },
-                  { key: '07', file: '07_betriebskonzept.md', label: c('doc07') },
-                ]},
-                { title: c('dataTitle'), docs: [
-                  { key: '03', file: '03_ki_act_klassifizierung.md', label: c('doc03') },
-                  { key: '04', file: '04_datenschutzinformation.md', label: c('doc04') },
-                  { key: '05', file: '05_datenschutzfolgeabschaetzung.md', label: c('doc05') },
-                  { key: '08', file: '08_verarbeitungsverzeichnis.md', label: c('doc08') },
-                ]},
-                { title: c('securityTitle'), docs: [
-                  { key: '06', file: '06_sicherheitskonzept.md', label: c('doc06') },
-                  { key: '09', file: '09_nutzungsrichtlinie.md', label: c('doc09') },
-                ]},
-              ]).map(group => (
-                <div key={group.title} className='flex flex-col gap-2'>
-                  <h3 className='text-xs font-semibold text-gray-400 uppercase tracking-wide'>{group.title}</h3>
-                  <div className='flex flex-col gap-1'>
-                    {group.docs.map(doc => (
-                      <a key={doc.key}
-                        href={`https://github.com/datenlabor-bmz/easy-redact/blob/main/docs/compliance/${doc.file}`}
-                        target='_blank' rel='noopener noreferrer'
-                        className='flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 bg-white text-xs text-gray-700 hover:border-primary/40 hover:text-primary transition-colors group'>
-                        <FileText className='h-3.5 w-3.5 text-gray-400 group-hover:text-primary shrink-0' />
-                        <span className='flex-1'>{doc.label}</span>
-                        <ExternalLink className='h-3 w-3 text-gray-300 group-hover:text-primary/60 shrink-0' />
-                      </a>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className='text-xs text-gray-400 text-center'>{c('descNonDe')}</p>
-          )}
-          <div className='flex justify-center'>
-            <a href='https://github.com/datenlabor-bmz/easy-redact/releases/download/compliance-docs/EasyRedact_Compliance.zip'
-              className='flex items-center gap-2 border border-gray-300 text-gray-700 px-5 py-2.5 rounded-lg font-medium text-xs hover:border-primary/40 hover:text-primary transition-colors'>
-              <Download className='h-3.5 w-3.5' />
-              {c('downloadZip')}
-            </a>
-          </div>
-        </div>
-      </section>
-
       {/* Credits */}
       <footer className='border-t bg-white px-6 py-10'>
         <div className='max-w-4xl mx-auto flex flex-col items-center gap-6'>
-          <div className='grid grid-cols-2 gap-x-10 gap-y-2 justify-center max-w-sm mx-auto'>
-            <p className='text-xs text-gray-400 text-center'>Funded by the<br />European Union</p>
-            <div />
-            <a href='https://next-generation-eu.europa.eu' target='_blank' rel='noopener noreferrer' className='justify-self-center'>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src='/logo-nextgen-eu.jpg' alt='NextGenerationEU' className='h-[100px] rounded' />
-            </a>
-            <a href={locale === 'de'
-              ? 'https://www.bmz-digital.global/initiativen-im-ueberblick/das-bmz-datenlabor/'
-              : 'https://www.bmz-digital.global/en/overview-of-initiatives/the-bmz-data-lab/'}
-              target='_blank' rel='noopener noreferrer' className='justify-self-center self-center'>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src='/logo-datalab.svg' alt='BMZ DataLab' className='h-[74px]' />
-            </a>
-          </div>
           <div className='flex flex-col items-center gap-0.5 text-xs text-gray-400'>
-            <span>EasyRedact</span>
-            <a href='https://github.com/datenlabor-bmz/easy-redact' target='_blank' rel='noopener noreferrer' className='hover:text-gray-600 transition-colors'>
-              Open Source
+            <span>LocalRedact</span>
+            <a href='https://github.com/christian-klng/localredact' target='_blank' rel='noopener noreferrer' className='hover:text-gray-600 transition-colors'>
+              Open Source (AGPL-3.0)
             </a>
           </div>
+          <p className='text-xs text-gray-400 text-center max-w-md leading-relaxed'>
+            Based on{' '}
+            <a href='https://github.com/datenlabor-bmz/easy-redact' target='_blank' rel='noopener noreferrer' className='underline hover:text-gray-600 transition-colors'>EasyRedact</a>
+            {' '}by the BMZ DataLab, whose development was funded by the European Union (NextGenerationEU).
+          </p>
         </div>
       </footer>
 

@@ -1,0 +1,27 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "localredact-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
+      "port": 3000
+    },
+    {
+      "name": "localredact-standalone",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "CLOUD_AI=false",
+        "NER_MODELS=local",
+        "REDACTION_RULES_SOURCE=local",
+        "HOSTNAME=127.0.0.1",
+        "node",
+        ".next/standalone/server.js"
+      ],
+      "port": 3000
+    }
+  ]
+}

@@ -1,0 +1,82 @@
+<!doctype html>
+<!-- Page loaded in a hidden, sandboxed window to render a DOCX for printing to
+     PDF. It has no network access and no access to Node or Electron. -->
+<meta charset="utf-8">
+<title>Dokument</title>
+<style>
+  body { margin: 0; }
+  .docx-wrapper { background: none !important; padding: 0 !important; display: block !important; }
+  .docx-wrapper > section.docx { box-shadow: none !important; margin: 0 !important; }
+</style>
+<div id="container"></div>
+<script src="../node_modules/jszip/dist/jszip.min.js"></script>
+<script src="../node_modules/docx-preview/dist/docx-preview.min.js"></script>
+<script>
+  // docx-preview lays a document out as screen "pages": one <section> per
+  // section or manual page break, with the page margins as padding and the
+  // header and footer once per section. For printing, the margins move to the
+  // @page rule so that every printed page gets them. The header and footer are
+  // taken out of the page and handed back as print templates, which the PDF
+  // printer repeats on every page.
+  const COPIED_STYLES = ['font-family', 'font-size', 'font-weight', 'font-style', 'color', 'text-align',
+    'text-decoration', 'line-height', 'margin-top', 'margin-bottom', 'width', 'height', 'vertical-align',
+    'border-collapse', 'padding-left', 'padding-right']
+
+  // Print templates do not see the page's style sheets, so the styles that
+  // matter are written onto each element.
+  function withInlineStyles(source) {
+    const clone = source.cloneNode(true)
+    const originals = [source, ...source.querySelectorAll('*')]
+    const copies = [clone, ...clone.querySelectorAll('*')]
+    originals.forEach((original, i) => {
+      const computed = getComputedStyle(original)
+      copies[i].removeAttribute('class')
+      copies[i].setAttribute('style', COPIED_STYLES.map(name => `${name}:${computed.getPropertyValue(name)}`).join(';'))
+    })
+    return clone
+  }
+
+  function printTemplate(part, margin, edge) {
+    if (!part || !part.textContent.trim() && !part.querySelector('img')) return ''
+    const content = withInlineStyles(part)
+    content.style.width = '100%'
+    content.style.height = 'auto'
+    const padding = edge === 'top' ? `1.25cm ${margin[1]} 0 ${margin[3]}` : `0 ${margin[1]} 1.25cm ${margin[3]}`
+    return `<div style="width:100%;box-sizing:border-box;padding:${padding};-webkit-print-color-adjust:exact">${content.outerHTML}</div>`
+  }
+
+  async function renderDocx(base64) {
+    const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0))
+    const container = document.getElementById('container')
+    await docx.renderAsync(new Blob([bytes]), container, null, {
+      renderHeaders: true, renderFooters: true, renderFootnotes: true, renderEndnotes: true,
+      renderChanges: false, renderComments: false,
+      breakPages: true, ignoreLastRenderedPageBreak: true, useBase64URL: true,
+    })
+    await document.fonts.ready
+
+    const sections = [...container.querySelectorAll('section.docx')]
+    if (!sections.length) throw new Error('The document has no content that could be rendered.')
+
+    const first = sections[0].style
+    const margin = [first.paddingTop, first.paddingRight, first.paddingBottom, first.paddingLeft].map(v => v || '2.5cm')
+    const size = first.width && first.minHeight ? `${first.width} ${first.minHeight}` : 'A4'
+
+    // The first section's header and footer stand for the whole document.
+    const headerTemplate = printTemplate(sections[0].querySelector(':scope > header'), margin, 'top')
+    const footerTemplate = printTemplate(sections[0].querySelector(':scope > footer'), margin, 'bottom')
+
+    sections.forEach((section, i) => {
+      for (const part of section.querySelectorAll(':scope > header, :scope > footer')) part.remove()
+      section.style.padding = '0'
+      section.style.width = 'auto'
+      section.style.minHeight = '0'
+      if (i < sections.length - 1) section.style.breakAfter = 'page'
+    })
+    const style = document.createElement('style')
+    style.textContent = `@page { size: ${size}; margin: ${margin.join(' ')}; }`
+    document.head.appendChild(style)
+
+    return { headerTemplate, footerTemplate }
+  }
+</script>

@@ -5,6 +5,8 @@ const path = require('node:path')
 const fs = require('node:fs')
 const net = require('node:net')
 const http = require('node:http')
+const crypto = require('node:crypto')
+const { convertDocx } = require('./docx/convert')
 
 const HOST = '127.0.0.1'
 const LOCALES = ['en', 'de', 'fr', 'es', 'ru', 'ar', 'zh']
@@ -49,8 +51,49 @@ function waitForServer(port, timeoutMs = 30_000) {
   })
 }
 
+// DOCX conversion needs a browser window to print from, which only this process
+// has. The bundled server reaches it through a loopback endpoint that accepts
+// nothing without the token generated for this run.
+const MAX_DOCX_BYTES = 200 * 1024 * 1024
+
+function startDocxService() {
+  const token = crypto.randomBytes(32).toString('hex')
+  const service = http.createServer(async (req, res) => {
+    const fail = (status, message) => {
+      res.writeHead(status, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ error: message }))
+    }
+    if (req.method !== 'POST' || req.url !== '/convert') return fail(404, 'Not found')
+    if (req.headers.authorization !== `Bearer ${token}`) return fail(401, 'Unauthorized')
+    try {
+      const chunks = []
+      let size = 0
+      for await (const chunk of req) {
+        size += chunk.length
+        if (size > MAX_DOCX_BYTES) return fail(413, 'The document is too large.')
+        chunks.push(chunk)
+      }
+      const { pdf, engine, removed } = await convertDocx(Buffer.concat(chunks))
+      res.writeHead(200, {
+        'Content-Type': 'application/pdf',
+        'X-Docx-Engine': engine,
+        'X-Docx-Removed': JSON.stringify(removed),
+      })
+      res.end(pdf)
+    } catch (err) {
+      console.error('DOCX conversion failed:', err)
+      fail(500, 'The document could not be converted.')
+    }
+  })
+  return new Promise((resolve, reject) => {
+    service.once('error', reject)
+    service.listen(0, HOST, () => resolve({ url: `http://${HOST}:${service.address().port}/convert`, token }))
+  })
+}
+
 async function startServer() {
   const port = await freePort()
+  const docxService = await startDocxService()
   server = utilityProcess.fork(path.join(serverDir, 'server.js'), [], {
     cwd: serverDir,
     serviceName: 'LocalRedact Server',
@@ -64,6 +107,8 @@ async function startServer() {
       CLOUD_AI: 'false',
       LOCAL_AI: 'ner-browser',
       REDACTION_RULES_SOURCE: 'local',
+      DOCX_CONVERTER_URL: docxService.url,
+      DOCX_CONVERTER_TOKEN: docxService.token,
       // Use the bundled NER model when the build contains one; nothing is then
       // downloaded at runtime.
       NER_MODELS: fs.existsSync(path.join(serverDir, 'public', 'models')) ? 'local' : 'remote',
@@ -117,8 +162,28 @@ async function smokeTest(win, origin) {
       hasBody: !!document.querySelector('button'),
     }
   })()`)
+  // Optionally push a DOCX through the app's own upload route, which exercises
+  // the server route, the conversion endpoint and the converter together.
+  const docxPath = process.env.LOCALREDACT_SMOKE_DOCX
+  if (docxPath) {
+    const base64 = fs.readFileSync(docxPath).toString('base64')
+    result.docx = await win.webContents.executeJavaScript(`(async () => {
+      const bytes = Uint8Array.from(atob(${JSON.stringify(base64)}), c => c.charCodeAt(0))
+      const form = new FormData()
+      form.append('file', new File([bytes], 'smoke.docx'))
+      const res = await fetch('/api/docx', { method: 'POST', body: form })
+      const pdf = new Uint8Array(await res.arrayBuffer())
+      return {
+        status: res.status,
+        engine: res.headers.get('X-Docx-Engine'),
+        removed: res.headers.get('X-Docx-Removed'),
+        bytes: pdf.length,
+        isPdf: String.fromCharCode(...pdf.slice(0, 5)) === '%PDF-',
+      }
+    })()`)
+  }
   console.log(`SMOKE ${JSON.stringify({ origin, ...result })}`)
-  return result.rulesStatus === 200 && result.hasBody
+  return result.rulesStatus === 200 && result.hasBody && (!docxPath || result.docx.isPdf)
 }
 
 if (!app.requestSingleInstanceLock()) {

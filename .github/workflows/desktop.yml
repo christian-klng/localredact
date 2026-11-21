@@ -7,7 +7,6 @@ on:
   pull_request:
     paths: ['desktop/**', 'src/**', 'package*.json', '.github/workflows/desktop.yml']
   push:
-    branches: [main, 'spike/**']
     paths: ['desktop/**', 'src/**', 'package*.json', '.github/workflows/desktop.yml']
 
 jobs:
@@ -29,12 +28,20 @@ jobs:
       # its model in the browser runtime and does not need them.
       npm_config_onnxruntime_node_install_cuda: skip
       ONNXRUNTIME_NODE_INSTALL_CUDA: skip
+      # The smoke test also converts a DOCX with the built-in renderer.
+      LOCALREDACT_DOCX_ENGINE: builtin
+      LOCALREDACT_SMOKE_DOCX: ${{ github.workspace }}/smoke.docx
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Create test DOCX
+        run: python desktop/spikes/docx/make_docx.py smoke.docx
       - name: Install web app dependencies
         run: npm ci
       - name: Install desktop dependencies

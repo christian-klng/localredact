@@ -101,6 +101,37 @@ Welche Bibliothek der eingebaute Konverter nutzt und ob die Layouttreue reicht, 
 
 Die App zeigt beim Import an, wenn ein Dokument Änderungsverfolgung oder Kommentare enthält, und was damit geschieht.
 
+**Ergebnis des Versuchs (21.11.2026)** mit einem selbst erzeugten Testdokument (`desktop/spikes/docx`). Geprüft wurde, was im Text des erzeugten PDFs steht:
+
+| Inhalt im DOCX | LibreOffice | mammoth + Chromium | docx-preview + Chromium |
+|---|---|---|---|
+| Fließtext, Tabelle, Textfeld, Fußnote | ja | ja | ja |
+| Kopf- und Fußzeile | ja, auf jeder Seite | **fehlen** | ja, aber nur einmal je Abschnitt |
+| Nachverfolgung: gelöschter Text | **ja, durchgestrichen sichtbar** | nein | nein |
+| Ausgeblendeter Text | nein | **ja, wird sichtbar** | nein |
+| Kommentar | nein | nein | nein |
+| Weißer Text auf weißem Grund | ja, unsichtbar | ja, sichtbar (schwarz) | ja, unsichtbar |
+| Autor in den PDF-Metadaten | **ja** | nein | nein |
+| Layout | Referenz | geht verloren | nah an der Referenz, Zeilen- und Seitenumbrüche weichen ab |
+
+Entscheidung: Der eingebaute Konverter nutzt **docx-preview** (Apache-2.0). mammoth (BSD-2-Clause) scheidet aus, weil Kopf- und Fußzeilen fehlen und ausgeblendeter Text sichtbar wird. LibreOffice bleibt die bevorzugte Wahl, wenn installiert, braucht aber dieselbe Vorbehandlung wie der eingebaute Weg.
+
+Daraus folgen drei Aufgaben für Phase 2 und 3:
+
+- **Vorbehandlung des DOCX vor jeder Umwandlung:** Änderungen annehmen (gelöschten Text entfernen), Kommentare und ausgeblendeten Text entfernen, Dokumenteigenschaften leeren. So verhalten sich beide Wege gleich.
+- **Unsichtbarer Text:** Weißer Text bleibt bei LibreOffice und docx-preview unsichtbar im PDF. Der abgesicherte Export muss Text erkennen, der dieselbe Farbe wie der Hintergrund hat oder winzig ist, und ihn anzeigen oder entfernen.
+- **Kopf- und Fußzeilen bei docx-preview** auf jeder gedruckten Seite wiederholen.
+
+Offen: Layouttreue bei echten Dokumenten (Formatvorlagen, Bilder, mehrspaltiger Satz). Das Testdokument enthält nur einfache Formatierung.
+
+**Stand der Umsetzung (21.11.2026):** Bereinigung (`desktop/docx/sanitize.js`) und Umwandlung (`desktop/docx/convert.js`) sind eingebaut und in der paketierten macOS-App getestet. LibreOffice wird verwendet, wenn es installiert ist, sonst der eingebaute Weg. Kopf- und Fußzeile stehen beim eingebauten Weg auf jeder Seite. Noch offen:
+
+- Hinweis in der Oberfläche, was beim Import entfernt wurde (die Zahlen liefert der Konverter bereits mit).
+- Der eingebaute Weg nutzt für das ganze Dokument Kopf- und Fußzeile des ersten Abschnitts; abweichende erste Seiten oder Abschnitte werden nicht unterschieden.
+- Im Testdokument erschien eine Fußnote beim eingebauten Weg doppelt; mit echten Dokumenten prüfen.
+- Schriften, die auf dem Rechner fehlen, werden ersetzt, wodurch sich Umbrüche verschieben.
+- Erkennung von unsichtbarem Text (Phase 3).
+
 ## 6. Phasen
 
 ### Phase 0 – Fork und Machbarkeit

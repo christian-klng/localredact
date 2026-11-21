@@ -2,6 +2,7 @@
 // process bound to the loopback interface and shows it in a sandboxed window.
 const { app, BrowserWindow, utilityProcess } = require('electron')
 const path = require('node:path')
+const fs = require('node:fs')
 const net = require('node:net')
 const http = require('node:http')
 
@@ -63,6 +64,9 @@ async function startServer() {
       CLOUD_AI: 'false',
       LOCAL_AI: 'ner-browser',
       REDACTION_RULES_SOURCE: 'local',
+      // Use the bundled NER model when the build contains one; nothing is then
+      // downloaded at runtime.
+      NER_MODELS: fs.existsSync(path.join(serverDir, 'public', 'models')) ? 'local' : 'remote',
     },
   })
   server.stdout?.on('data', d => process.stdout.write(`[server] ${d}`))

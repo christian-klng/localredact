@@ -44,6 +44,7 @@ export default async function LocaleLayout({
         <script dangerouslySetInnerHTML={{ __html: `window.__ER_CFG__=${JSON.stringify({
           cloudAi: process.env.CLOUD_AI !== 'false',
           localAi: process.env.LOCAL_AI ?? 'ner-browser',
+          nerModels: process.env.NER_MODELS === 'local' ? 'local' : 'remote',
         })}` }} />
         <NextIntlClientProvider messages={messages}>
           <Providers>

@@ -8,6 +8,7 @@
   "homepage": "https://github.com/christian-klng/localredact",
   "main": "main.js",
   "scripts": {
+    "fetch:models": "node fetch-models.mjs",
     "build:server": "node build-server.mjs",
     "start": "electron .",
     "smoke": "electron . --smoke",

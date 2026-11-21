@@ -1,4 +1,4 @@
-import { pipeline as _pipeline, type TokenClassificationPipeline, type TokenClassificationOutput } from '@huggingface/transformers'
+import { pipeline as _pipeline, env, type TokenClassificationPipeline } from '@huggingface/transformers'
 import * as Comlink from 'comlink'
 
 export interface NerEntity {
@@ -14,66 +14,62 @@ export type ProgressEvent =
   | { status: 'progress'; file: string; progress: number }
   | { status: 'ready' }
 
+// Where the model and the ONNX runtime come from. With `local` set, nothing is
+// fetched from the internet: both are served by the app itself.
+export interface ModelSource {
+  local: boolean
+  basePath: string
+}
+
+// A PII detector rather than a general NER model: it labels private persons,
+// addresses, e-mail addresses, phone numbers, dates, account numbers, URLs and
+// secrets. Licensed Apache-2.0.
+const MODEL = 'openai/privacy-filter'
+const MIN_SCORE = 0.5
+
+interface AggregatedEntity { entity_group: string; word: string; score: number }
+
 let classifier: TokenClassificationPipeline | null = null
 
-function findAndAddEntity(entity: { text: string; type: string; score: number }, originalText: string, entities: NerEntity[]) {
-  if (!entity.text) return
-  const startPos = originalText.indexOf(entity.text)
-  if (startPos !== -1)
-    entities.push({ ...entity, startIndex: startPos, endIndex: startPos + entity.text.length })
-}
-
-function decodeBIO(output: TokenClassificationOutput, originalText: string): NerEntity[] {
+// The pipeline returns each span as text only. Locate it in the page, moving a
+// cursor forward so repeated names map to successive occurrences.
+function toEntities(output: AggregatedEntity[], originalText: string): NerEntity[] {
   const entities: NerEntity[] = []
-  let cur: { text: string; type: string; score: number; words: string[]; rawWords: string[] } | null = null
-
-  const flush = () => { if (cur) { findAndAddEntity(cur, originalText, entities); cur = null } }
-
-  for (const token of output) {
-    const clean = token.word.replace('##', '')
-
-    if (token.entity === 'O') { flush(); continue }
-
-    if (token.entity.startsWith('B-')) {
-      flush()
-      cur = { text: clean, type: token.entity.slice(2), score: token.score, words: [clean], rawWords: [token.word] }
-    } else if (token.entity.startsWith('I-') && cur) {
-      cur.words.push(clean)
-      cur.rawWords.push(token.word)
-
-      const reconstructions = [
-        cur.words.join(''),
-        cur.words.join(' '),
-        cur.rawWords.reduce((t, w, i) => i === 0 ? w : t + (w.startsWith('##') ? w.slice(2) : ' ' + w), ''),
-        cur.words.reduce((t, w) => {
-          const joined = t + w, spaced = t + ' ' + w
-          return originalText.includes(joined) ? joined : originalText.includes(spaced) ? spaced : t
-        }, cur.words[0]),
-      ]
-
-      for (const r of reconstructions)
-        if (originalText.includes(r) && r.length > (cur.text?.length ?? 0))
-          cur.text = r
-
-      cur.score = Math.min(cur.score, token.score)
-    }
+  let cursor = 0
+  for (const span of output) {
+    if (span.score < MIN_SCORE) continue
+    const text = span.word.trim().replace(/[,;:.]+$/, '').trim()
+    if (text.length < 2) continue
+    let startIndex = originalText.indexOf(text, cursor)
+    if (startIndex === -1) startIndex = originalText.indexOf(text)
+    if (startIndex !== -1) cursor = startIndex + text.length
+    entities.push({
+      text,
+      type: span.entity_group,
+      score: span.score,
+      startIndex,
+      endIndex: startIndex === -1 ? -1 : startIndex + text.length,
+    })
   }
-  flush()
-  return entities.sort((a, b) => a.startIndex - b.startIndex)
+  return entities
 }
 
-const MODEL = 'Xenova/bert-base-multilingual-cased-ner-hrl'
-
-async function loadModel(onProgress: (e: ProgressEvent) => void) {
+async function loadModel(onProgress: (e: ProgressEvent) => void, source?: ModelSource) {
   if (classifier) { onProgress({ status: 'ready' }); return }
+  if (source?.local) {
+    env.allowRemoteModels = false
+    env.allowLocalModels = true
+    env.localModelPath = `${source.basePath}/models/`
+    // The files are already on this machine; a second copy in the browser cache
+    // would only double the disk usage.
+    env.useBrowserCache = false
+    if (env.backends.onnx.wasm) env.backends.onnx.wasm.wasmPaths = `${source.basePath}/ort/`
+  }
   const device = (navigator as Navigator & { gpu?: unknown }).gpu ? 'webgpu' : 'wasm'
-  const dtype = device === 'webgpu' ? 'fp16' : 'q8'
   const fileProgress = new Map<string, number>()
   let lastReported = -1
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   classifier = await (_pipeline as any)('token-classification', MODEL, {
-    device, dtype,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    device, dtype: 'q4',
     progress_callback: (e: any) => {
       if (e.status === 'progress' && e.file) {
         fileProgress.set(e.file, e.progress ?? 0)
@@ -98,8 +94,8 @@ async function analyzePages(
   if (!classifier) throw new Error('Model not loaded')
   for (const { pageIndex, text } of pages) {
     if (!text.trim()) { onPageDone(pageIndex, []); continue }
-    const output = await classifier(text, { ignore_labels: [] }) as TokenClassificationOutput
-    onPageDone(pageIndex, decodeBIO(output, text))
+    const output = await (classifier as any)(text, { aggregation_strategy: 'simple' }) as AggregatedEntity[]
+    onPageDone(pageIndex, toEntities(output, text))
   }
 }
 

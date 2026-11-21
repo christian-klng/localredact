@@ -186,3 +186,42 @@ Die App zeigt beim Import an, wenn ein Dokument Änderungsverfolgung oder Kommen
 3. **Sitzungsdaten:** EasyRedact speichert Dokumente bis zu sechs Monate lokal. Für LocalRedact steht zur Wahl: beibehalten, kürzen oder standardmäßig gar nicht speichern.
 4. **Sprachen:** alle sieben Sprachen von EasyRedact behalten oder zunächst nur Deutsch und Englisch pflegen.
 5. **Signierung:** Apple-Developer-Konto und Windows-Zertifikat müssen vor Phase 5 vorhanden sein.
+
+## 9. Lizenzprüfung (Stand 20.11.2026)
+
+Technische Bestandsaufnahme, keine Rechtsberatung.
+
+| Bestandteil | Lizenz | Bewertung |
+|---|---|---|
+| EasyRedact (Ausgangscode) | AGPL-3.0 | Fork muss AGPL-3.0 bleiben |
+| MuPDF | AGPL-3.0-or-later | Grund für die AGPL; ohne Kauflizenz von Artifex kein geschlossener Vertrieb |
+| Übrige npm-Pakete (905 geprüft) | MIT, ISC, Apache-2.0, BSD | unkritisch |
+| sharp/libvips | LGPL-3.0-or-later | verträglich; wird nur für Bildoptimierung gebraucht und kann entfallen |
+| Electron mit Chromium und ffmpeg | MIT, BSD, LGPL | unkritisch; Lizenztexte liegen dem Paket bei und müssen im Installer bleiben |
+| llama.cpp | MIT | unkritisch |
+| Gemma 4 | Apache-2.0 | unkritisch; wird nicht mitgeliefert, sondern importiert |
+| Schrift Inter | OFL-1.1 | unkritisch; Lizenzhinweis beilegen |
+| IFG-Regeln (redaction-rules) | CC0-1.0 | unkritisch |
+| NER-Modell `Xenova/bert-base-multilingual-cased-ner-hrl` | keine Angabe; Ausgangsmodell von Davlan: AFL-3.0 | **ungeklärt**, siehe unten |
+| Logos BMZ DataLab und NextGenerationEU | nicht von der Code-Lizenz gedeckt | aus der App entfernen, Herkunft nur als Text nennen |
+| Compliance-Dokumente (`docs/compliance`) | beschreiben EasyRedact | gelten nicht für LocalRedact; entfernen oder neu erstellen |
+
+**Offener Punkt NER-Modell:** Die verwendete Fassung trägt keine Lizenzangabe, das Ausgangsmodell steht unter AFL-3.0. Die FSF stuft die AFL als nicht GPL-verträglich ein; ob ein mitgeliefertes Modell als Daten davon betroffen ist, ist rechtlich nicht geklärt. EasyRedact lädt das Modell zur Laufzeit nach, LocalRedact würde es selbst weiterverbreiten. Vor Phase 1 entweder rechtlich klären oder ein NER-Modell mit eindeutiger, freizügiger Lizenz wählen. Die Lizenzen der Trainingsdaten sind nicht geprüft.
+
+**Vergleich möglicher Ersatzmodelle (21.11.2026)**, gemessen am Beispieldokument aus `desktop/spikes/sample-document.json` mit 12 erwarteten Stellen, ohne die Muster-Erkennung von Stufe 1:
+
+| Modell | Lizenz | Größe | Vollständig erkannt | Dauer für 2 Seiten |
+|---|---|---|---|---|
+| Bisher: Xenova/bert-base-multilingual-cased-ner-hrl (q8) | ungeklärt | 178 MB | 2 von 12 | 0,07 s |
+| OpenAI Privacy Filter (q4) | Apache-2.0 | 907 MB | 9 von 12 | 0,7 s |
+| GLiNER Multi PII (int8) | Apache-2.0 (Basismodell) | 349 MB | 0 von 12 | 0,3 s |
+
+Privacy Filter übersah zwei Straßenadressen und schnitt die IBAN um zwei Ziffern ab; es belegte im Test 2,6 GB Arbeitsspeicher. Die int8-Fassung von GLiNER lieferte nur sehr niedrige Trefferwerte; größere Fassungen (580 MB und mehr) sind nicht getestet. Ein Dokument und ein Lauf je Modell sind keine belastbare Quote.
+
+**Pflichten aus der AGPL für LocalRedact:**
+
+- Lizenztext und Herkunftshinweis auf EasyRedact beibehalten; geänderte Dateien als geändert kennzeichnen.
+- Jedem Empfänger der App den vollständigen Quellcode anbieten (Link in der App und im Installer).
+- Verkauf ist erlaubt; Käufer dürfen die App aber weitergeben und verändern.
+
+**Noch zu prüfen:** die Bibliothek für den DOCX-Konverter, sobald sie gewählt ist.

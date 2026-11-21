@@ -46,3 +46,4 @@ next-env.d.ts
 # desktop shell
 /desktop/node_modules
 /desktop/dist
+/desktop/models

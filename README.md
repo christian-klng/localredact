@@ -31,7 +31,7 @@ npm start              # runs the app
 npm run pack           # packages it into desktop/dist
 ```
 
-`npm run smoke` starts the app, checks it and exits. With `LOCALREDACT_SMOKE_DOCX=/path/to/file.docx` it also converts that file, opens the result and waits for the model's findings. The document has to contain at least one person's name that the model detects; the run waits for that finding and fails when it does not appear. It also fails if anything tried to reach another machine.
+`npm run smoke` starts the app, checks it and exits. With `LOCALREDACT_SMOKE_DOCX=/path/to/file.docx` it also converts that file, opens the result and waits for the model's findings. The document has to contain at least one person's name that the model detects; the run waits for that finding and fails when it does not appear. It then opens two more documents, switches between them and switches a category off and on, and checks that each document keeps exactly its own findings. It also fails if anything tried to reach another machine.
 
 Configuration is read from environment variables; `.env.example` lists them. The desktop app sets what it needs itself.
 

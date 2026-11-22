@@ -8,6 +8,7 @@ const http = require('node:http')
 const crypto = require('node:crypto')
 const { convertDocx } = require('./docx/convert')
 const { lockDownNetwork, blockedRequests } = require('./network/lockdown')
+const { testSeveralDocuments } = require('./selftest-documents')
 
 lockDownNetwork()
 
@@ -243,6 +244,12 @@ async function smokeTest(win, origin) {
       ok &&= result.ner.persons > 0
     } else if (result.docx.isPdf) {
       result.ner = 'skipped: this build has no bundled model'
+    }
+
+    // With the model loaded: several documents at once.
+    if (typeof result.ner === 'object' && result.ner.persons > 0) {
+      result.severalDocuments = await testSeveralDocuments(win)
+      ok &&= result.severalDocuments.ok
     }
   }
 

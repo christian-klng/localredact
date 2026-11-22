@@ -77,6 +77,9 @@ export function PdfViewer({
   // document again, but the worker has loaded another one in between, so the
   // key alone cannot tell that a run was overtaken.
   const loadCountRef = useRef(0)
+  // The redactions as of the latest render, for code that runs across several.
+  const redactionsRef = useRef(redactions)
+  redactionsRef.current = redactions
   const [isLoading, setIsLoading] = useState(false)
   const [currentHighlight, setCurrentHighlight] = useState<HighlightInProgress | null>(null)
   const [metadata, setMetadata] = useState<Record<string, string>>({})
@@ -230,9 +233,10 @@ export function PdfViewer({
       // only when its box already sits inside a redacted area. A longer match
       // overlapping a shorter one still contributes its extra area, and a name
       // repeated elsewhere on the page keeps its own box.
-      const covered = redactions
-        .filter(r => r.status !== 'ignored')
-        .map(r => ({ page: r.pageIndex, parts: r.parts }))
+      // What this run has added itself; the stored redactions are read fresh at
+      // each check (see `isCovered`), so that a second run started in the
+      // meantime sees what this one has stored and does not store it again.
+      const added: { page: number; parts: RedactionPart[] }[] = []
 
       const TOLERANCE = 1
       const isInside = (inner: RedactionPart, outer: RedactionPart) =>
@@ -241,8 +245,13 @@ export function PdfViewer({
         inner.x + inner.width <= outer.x + outer.width + TOLERANCE &&
         inner.y + inner.height <= outer.y + outer.height + TOLERANCE
 
-      const isCovered = (page: number, parts: RedactionPart[]) =>
-        parts.every(p => covered.some(c => c.page === page && c.parts.some(q => isInside(p, q))))
+      const isCovered = (page: number, parts: RedactionPart[]) => {
+        const covered = [
+          ...redactionsRef.current.filter(r => r.status !== 'ignored').map(r => ({ page: r.pageIndex, parts: r.parts })),
+          ...added,
+        ]
+        return parts.every(p => covered.some(c => c.page === page && c.parts.some(q => isInside(p, q))))
+      }
 
       // A name (or other exact string) the model flags on one page is rarely
       // confined to it — it typically recurs in a header, a signature, or a later
@@ -317,7 +326,7 @@ export function PdfViewer({
             for (const matchQuads of quads) {
               const parts = matchQuads.map(q => quadToPart(q as number[]))
               if (isCovered(p, parts)) continue
-              covered.push({ page: p, parts })
+              added.push({ page: p, parts })
               onRedactionAdd({
                 id: generateUUID(), documentKey: docKey, pageIndex: p, parts,
                 searchText: effectiveText,

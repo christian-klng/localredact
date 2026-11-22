@@ -45,9 +45,9 @@ Configuration is read from environment variables; `.env.example` lists them. The
 
 ## How LocalRedact is checked
 
-Every change reaches `main` through a pull request, and each pull request has to pass the same checks:
+Every change reaches `main` through a pull request. A pull request that touches the app (its code, the desktop shell or their dependencies) runs the checks below and is merged only when they pass; one that changes documentation alone does not run the self-test.
 
-- **Self-test on macOS, Windows and Linux.** The packaged app is started on all three systems. It converts a DOCX, opens the result, waits for the bundled model's findings, and then works with several documents at once. The run fails if anything tried to reach another machine or if a finding ended up with the wrong document. The badge at the top shows the state of this check on `main`.
+- **Self-test on macOS, Windows and Linux.** The packaged app is started on all three systems. It converts a DOCX, opens the result, waits for the bundled model's findings, and then works with several documents at once. The run fails if anything tried to reach another machine or if a finding ended up with the wrong document. The badge at the top shows the most recent run of this check on `main`.
 - **Automated code review.** Pull requests are reviewed by [CodeRabbit](https://www.coderabbit.ai/). Its comments are public on each [pull request](https://github.com/christian-klng/localredact/pulls?q=is%3Apr); several fixes in this repository go back to them.
 
 What this does not replace: LocalRedact has not had an independent security audit, and the automated checks cover a limited set of situations. Whoever publishes a redacted document remains responsible for checking it. `PLAN.md` lists the known gaps.

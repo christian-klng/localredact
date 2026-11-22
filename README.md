@@ -1,5 +1,7 @@
 # LocalRedact
 
+[![Desktop build](https://github.com/christian-klng/localredact/actions/workflows/desktop.yml/badge.svg?branch=main)](https://github.com/christian-klng/localredact/actions/workflows/desktop.yml)
+
 Desktop app for redacting sensitive data in PDF and DOCX files. Everything runs on your own computer: the app makes no connection to the internet, and there is no cloud mode.
 
 LocalRedact is a fork of [EasyRedact](https://github.com/datenlabor-bmz/easy-redact) and is under development. [PLAN.md](PLAN.md) holds the roadmap, the decisions taken so far and what is still open.
@@ -40,6 +42,15 @@ Configuration is read from environment variables; `.env.example` lists them. The
 - The app's windows cannot resolve any name but localhost, and every request to another machine is cancelled and recorded (`desktop/network/lockdown.js`).
 - The bundled server refuses every connection that does not stay on the computer (`desktop/network/guard.js`).
 - The self-test above runs on macOS, Windows and Linux for every change.
+
+## How LocalRedact is checked
+
+Every change reaches `main` through a pull request, and each pull request has to pass the same checks:
+
+- **Self-test on macOS, Windows and Linux.** The packaged app is started on all three systems. It converts a DOCX, opens the result, waits for the bundled model's findings, and then works with several documents at once. The run fails if anything tried to reach another machine or if a finding ended up with the wrong document. The badge at the top shows the state of this check on `main`.
+- **Automated code review.** Pull requests are reviewed by [CodeRabbit](https://www.coderabbit.ai/). Its comments are public on each [pull request](https://github.com/christian-klng/localredact/pulls?q=is%3Apr); several fixes in this repository go back to them.
+
+What this does not replace: LocalRedact has not had an independent security audit, and the automated checks cover a limited set of situations. Whoever publishes a redacted document remains responsible for checking it. `PLAN.md` lists the known gaps.
 
 ## Tech stack
 

@@ -56,13 +56,21 @@ async function scenario(documents, settleTimeoutMs) {
   })
 
   const persons = list => list.filter(entry => entry.includes('PER')).length
-  // Show each document in turn until both have findings for persons.
+  // Show each document in turn until both have findings for persons and nothing
+  // has changed over two further rounds. Findings arrive in several steps, so
+  // the first one alone does not mean a document is done.
   const settle = async () => {
     const deadline = Date.now() + settleTimeoutMs
+    let previous = ''
+    let unchanged = 0
     for (;;) {
       for (const name of names) { show(name); await sleep(2500) }
       const state = await stored()
-      if (names.every(name => persons(state[name]) > 0) || Date.now() > deadline) return state
+      const snapshot = JSON.stringify(state)
+      unchanged = snapshot === previous ? unchanged + 1 : 0
+      previous = snapshot
+      const complete = names.every(name => persons(state[name]) > 0) && unchanged >= 2
+      if (complete || Date.now() > deadline) return state
     }
   }
   const switchRapidly = async () => {
@@ -90,12 +98,8 @@ async function scenario(documents, settleTimeoutMs) {
     toggle('Personen')
     await switchRapidly()
   }
-  // Give every queued finding the chance to be applied in its own document.
-  let after = await settle()
-  for (let i = 0; i < 2; i++) {
-    for (const name of names) { show(name); await sleep(2500) }
-    after = await stored()
-  }
+  // Every queued finding gets the chance to be applied in its own document.
+  const after = await settle()
 
   return { before, after }
 }

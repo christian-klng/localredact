@@ -24,7 +24,7 @@ if (!hasModels) console.warn('WARNING: desktop/models is empty - this build will
 execSync('npm run build', {
   cwd: root,
   stdio: 'inherit',
-  env: { ...process.env, CLOUD_AI: 'false', NER_MODELS: hasModels ? 'local' : 'remote', NEXT_TELEMETRY_DISABLED: '1' },
+  env: { ...process.env, NER_MODELS: hasModels ? 'local' : 'remote', NEXT_TELEMETRY_DISABLED: '1' },
 })
 
 await access(join(standalone, 'server.js')).catch(() => {

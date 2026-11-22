@@ -113,7 +113,7 @@ export function useChatStream(opts: UseChatStreamOptions) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: apiMessages,
-          model: effectiveAiMode === 'local' ? 'local' : 'cloud',
+          model: 'local',
           aiMode: effectiveAiMode, redactionMode, foiJurisdiction,
           documentPages: scopedDocumentPages,
           currentRedactions,

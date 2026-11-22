@@ -61,7 +61,6 @@ async function startServer() {
       PORT: String(port),
       HOSTNAME: '127.0.0.1',
       NEXT_TELEMETRY_DISABLED: '1',
-      CLOUD_AI: 'false',
       LOCAL_AI: 'llm',
       LOCAL_LLM_API_BASE: base,
       LOCAL_LLM_API_KEY: 'local',

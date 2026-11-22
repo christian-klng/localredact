@@ -43,13 +43,12 @@ export async function POST(req: Request) {
     : undefined
 
   const systemPrompt = buildSystemPrompt({ redactionMode, foiJurisdiction, foiRules, locale, primaryDocumentName })
-  const isLocal = aiMode === 'local'
-  const { client, model: modelName } = getClient(isLocal ? 'local' : 'cloud')
+  const { client, model: modelName } = getClient()
   const activeTools = [...tools, readDocumentsTool]
   // Thinking models spend most of their time reasoning before each reply. On
   // local hardware that dominates the wait, so it can be turned down or off
   // (e.g. LOCAL_LLM_REASONING_EFFORT=none).
-  const reasoningEffort = isLocal ? process.env.LOCAL_LLM_REASONING_EFFORT : undefined
+  const reasoningEffort = process.env.LOCAL_LLM_REASONING_EFFORT
   const completionOptions = reasoningEffort ? { reasoning_effort: reasoningEffort } : {}
 
   const stream = new ReadableStream({

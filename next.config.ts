@@ -42,7 +42,7 @@ const nextConfig: NextConfig = {
   output: 'standalone',
   // The NER model also runs on the server; its runtime is a native module that
   // must be loaded from node_modules, not bundled.
-  serverExternalPackages: ['undici', '@huggingface/transformers', 'onnxruntime-node'],
+  serverExternalPackages: ['@huggingface/transformers', 'onnxruntime-node'],
   // File tracing misses the native runtime: it is an optional import of the
   // model library and loads its binary by a computed path. Its code is listed
   // here, with the binaries of this platform only.

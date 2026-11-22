@@ -114,7 +114,6 @@ async function startServer() {
       PORT: String(port),
       HOSTNAME: HOST,
       NEXT_TELEMETRY_DISABLED: '1',
-      CLOUD_AI: 'false',
       LOCAL_AI: 'ner-browser',
       REDACTION_RULES_SOURCE: 'local',
       DOCX_CONVERTER_URL: docxService.url,

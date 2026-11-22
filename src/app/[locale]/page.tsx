@@ -1,12 +1,7 @@
-'use client'
+import { redirect } from '@/lib/navigation'
+import { getLocale } from 'next-intl/server'
 
-import { useEffect } from 'react'
-import { useRouter } from '@/lib/navigation'
-
-export default function RootPage() {
-  const router = useRouter()
-  useEffect(() => {
-    router.replace(localStorage.getItem('hasVisitedApp') ? '/app' : '/about')
-  }, [router])
-  return null
+// The app is the only page.
+export default async function RootPage() {
+  redirect({ href: '/app', locale: await getLocale() })
 }

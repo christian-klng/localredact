@@ -1,67 +1,28 @@
 'use client'
 
-import { Cloud, Shield } from 'lucide-react'
+import { Shield } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useTranslations } from 'next-intl'
-import { cloudAiEnabled, localAi } from '@/lib/config'
-import type { AiMode } from '@/types'
+import { localAi } from '@/lib/config'
 
-interface ModeSelectorProps {
-  aiMode: AiMode
-  onAiModeChange: (mode: AiMode) => void
-}
-
-export function ModeSelector({ aiMode, onAiModeChange }: ModeSelectorProps) {
+// There is only one mode - everything runs locally - so this is a badge that
+// says so, with a tooltip explaining what "local" means in this build.
+export function ModeSelector() {
   const t = useTranslations('ModeSelector')
 
   const localDesc = localAi === 'ner-browser' ? t('localBrowserDesc')
     : localAi === 'llm' ? t('localLlmDesc')
     : t('localSpacyDesc')
 
-  if (!cloudAiEnabled) {
-    return (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <div className='flex items-center gap-1.5 px-2 text-xs text-muted-foreground'>
-            <Shield className='h-3.5 w-3.5 text-green-600' />
-            <span className='font-medium text-foreground'>{t('localLabel')}</span>
-          </div>
-        </TooltipTrigger>
-        <TooltipContent side='bottom' className='max-w-52 text-center'>{localDesc}</TooltipContent>
-      </Tooltip>
-    )
-  }
-
   return (
-    <div className='flex h-7 rounded-md border bg-muted/50 p-0.5'>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button onClick={() => onAiModeChange('cloud')}
-            className={`flex items-center gap-1.5 px-2.5 rounded text-xs whitespace-nowrap transition-colors ${
-              aiMode === 'cloud'
-                ? 'bg-background shadow-sm text-foreground font-medium'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}>
-            <Cloud className='h-3 w-3 shrink-0 text-blue-500' />
-            <span className='hidden @[20rem]:inline'>{t('cloudLabel')}</span>
-          </button>
-        </TooltipTrigger>
-        <TooltipContent side='bottom' className='max-w-52 text-center'><strong>{t('cloudLabel')}</strong> — {t('cloudDesc')}</TooltipContent>
-      </Tooltip>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button onClick={() => onAiModeChange('local')}
-            className={`flex items-center gap-1.5 px-2.5 rounded text-xs whitespace-nowrap transition-colors ${
-              aiMode === 'local'
-                ? 'bg-background shadow-sm text-foreground font-medium'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}>
-            <Shield className='h-3 w-3 shrink-0 text-green-600' />
-            <span className='hidden @[20rem]:inline'>{t('localLabel')}</span>
-          </button>
-        </TooltipTrigger>
-        <TooltipContent side='bottom' className='max-w-52 text-center'><strong>{t('localLabel')}</strong> — {localDesc}</TooltipContent>
-      </Tooltip>
-    </div>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <div className='flex items-center gap-1.5 px-2 text-xs text-muted-foreground'>
+          <Shield className='h-3.5 w-3.5 text-green-600' />
+          <span className='font-medium text-foreground'>{t('localLabel')}</span>
+        </div>
+      </TooltipTrigger>
+      <TooltipContent side='bottom' className='max-w-52 text-center'>{localDesc}</TooltipContent>
+    </Tooltip>
   )
 }

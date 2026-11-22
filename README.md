@@ -1,190 +1,58 @@
-[[Gitlab repo](https://gitlab.opencode.de/datenlabor-bmz/easy-redact) | [Github mirror](https://github.com/datenlabor-bmz)]
+# LocalRedact
 
-> **LocalRedact** is a fork of EasyRedact that is being turned into an offline desktop app for macOS, Windows and Linux. See [PLAN.md](PLAN.md) for the roadmap. The text below still describes the upstream web app and will be rewritten as the fork diverges.
+Desktop app for redacting sensitive data in PDF and DOCX files. Everything runs on your own computer: the app makes no connection to the internet, and there is no cloud mode.
 
-# EasyRedact
+LocalRedact is a fork of [EasyRedact](https://github.com/datenlabor-bmz/easy-redact) and is under development. [PLAN.md](PLAN.md) holds the roadmap, the decisions taken so far and what is still open.
 
-AI-assisted PDF redaction tool for German federal ministries (BMZ). Upload a PDF or DOCX, have the AI suggest redactions via an interactive chat, review and adjust them, then export a fully redacted document — everything runs in the browser, documents never leave the machine unless you choose Cloud AI mode.
+## What it does
 
-## Features
+- **Finds personal data** with a bundled model ([OpenAI Privacy Filter](https://huggingface.co/openai/privacy-filter), Apache-2.0) and with patterns for phone numbers, e-mail addresses, IBANs, dates and identifiers. The model runs on the graphics card where one is usable and on the processor otherwise.
+- **Manual redaction**: draw rectangles or select text directly on the page.
+- **FOI / IFG mode**: assign the exemption clause of a Freedom of Information law to each redaction. The German IFG is bundled.
+- **DOCX**: documents are cleaned first (tracked changes accepted; comments, hidden text and document properties removed) and then converted to PDF, by LibreOffice when it is installed and by a built-in renderer otherwise.
+- **Export**: a preview PDF with highlights for review, and a redacted PDF with the text permanently removed by MuPDF.
+- **Chat assistant** (optional, experimental): a language model running locally suggests redactions and explains them. See `PLAN.md` for the state of this.
 
-- **Two redaction modes**
-  - **PII** — redacts personal data: names, addresses, emails, phone numbers, bank details, dates of birth
-  - **FOI / IFG** — redacts based on the exemption clauses of a chosen Freedom of Information law; jurisdiction rules are loaded either from a bundled local copy or at runtime from [`datenlabor-bmz/redaction-rules`](https://github.com/datenlabor-bmz/redaction-rules), selectable via `REDACTION_RULES_SOURCE` (see below)
-
-- **Cloud AI and Local AI** (switchable at any time via the mode selector)
-  - **Cloud AI** — any OpenAI-compatible LLM endpoint (e.g. Azure AI Foundry, GDPR-compliant, no data retention)
-  - **Local AI** — processes documents on your own infrastructure or in the browser; configured via `LOCAL_AI` (see below)
-
-- **AI chat assistant** — reads the document, asks targeted clarifying questions, then suggests redactions with exact text matches, confidence ratings, affected persons, and legal justifications
-
-- **Manual redactions** — draw rectangles or select text directly on the PDF without AI involvement
-
-- **Multi-document tabs** — open multiple PDFs at once; session (documents, redactions, chat) is persisted in IndexedDB and survives page reload
-
-- **Export**
-  - Preview PDF — yellow highlight boxes for review and sign-off
-  - Redacted PDF — text permanently removed via MuPDF, ready for publication
-
-- **DOCX → PDF conversion** — LibreOffice-backed, Docker deployment only
-
-## Architecture
-
-Three-panel layout rendered entirely client-side:
-
-| Panel | Content |
-|-------|---------|
-| Left | Redaction list grouped by person/page; accept / ignore controls; FOI rule assignment |
-| Center | PDF viewer (MuPDF WASM in a Comlink worker); zoom; export |
-| Right | Chat or NLP panel; AI mode selector; streaming SSE from `/api/chat` |
-
-The Next.js API routes (`/api/chat`, `/api/docx`, `/api/nlp`) are thin server-side proxies — all document rendering and redaction geometry stay in the browser.
-
-## Getting Started
+## Development
 
 ```bash
-npm install
-npm run dev
+npm ci
+npm run dev            # the web UI alone, at http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000). Copy `.env.example` to `.env` and fill in at minimum the Cloud LLM credentials.
-
-## Environment Variables
-
-See `.env.example` for the full list. Key variables:
-
-```env
-# Cloud LLM (any OpenAI-compatible API — Azure AI Foundry, OpenAI, etc.)
-CLOUD_LLM_API_BASE=https://YOUR-RESOURCE.openai.azure.com/openai/v1
-CLOUD_LLM_API_KEY=
-CLOUD_LLM_MODEL=gpt-5.1
-
-# Local LLM (Ollama, vLLM, llama.cpp, or other OpenAI-compatible API — used when LOCAL_AI=llm)
-LOCAL_LLM_API_BASE=http://localhost:11434/v1
-LOCAL_LLM_API_KEY=ollama
-LOCAL_LLM_MODEL=llama3.3:latest
-
-# Which local AI mode: 'ner-browser' (default), 'llm', or 'ner'
-LOCAL_AI=ner-browser
-
-# Set to 'false' to hide the Cloud AI option from the UI
-CLOUD_AI=true
-
-# Source of the FOI/IFG redaction rules: 'github' (default) or 'local'
-REDACTION_RULES_SOURCE=github
-
-# Default UI language (optional): en, de, fr, es, ru, ar, zh
-# DEFAULT_LOCALE=de
-```
-
-### FOI rule source (`REDACTION_RULES_SOURCE`)
-
-In FOI mode the AI is given the exemption clauses of the selected jurisdiction's law. Where those rule sets come from is controlled by `REDACTION_RULES_SOURCE`:
-
-| Value | Behaviour |
-|-------|-----------|
-| `github` (default) | Fetches the jurisdiction index and rule files at runtime from [`datenlabor-bmz/redaction-rules`](https://github.com/datenlabor-bmz/redaction-rules) |
-| `local` | Serves the JSON bundled in `src/data/rules/` — no outbound network call, works fully air-gapped |
-
-The bundled local set ships with the German **IFG** (`de-ifg-bund`). To add or update rules for local mode, drop a `<jurisdiction-id>.json` file into `src/data/rules/` (same shape as the upstream repo) and add a matching entry to `src/data/rules/index.json`. The browser always reaches the rules through the `/api/rules` proxy, so the source stays a server-side concern regardless of the setting.
-
-### Azure AI Foundry setup
-
-To use Azure OpenAI as the Cloud LLM, create an Azure AI Foundry resource and set:
-
-```env
-CLOUD_LLM_API_BASE=https://YOUR-RESOURCE.openai.azure.com/openai/v1
-CLOUD_LLM_API_KEY=your-azure-api-key
-CLOUD_LLM_MODEL=gpt-5.1
-```
-
-The `/openai/v1` path exposes an OpenAI-compatible API. No Azure-specific SDK configuration is needed.
-
-### Deployment profiles
-
-| Profile | `CLOUD_AI` | `LOCAL_AI` | Use case |
-|---------|-----------|------------|----------|
-| Online demo | `true` (default) | `ner-browser` (default) | easyredact.io — Cloud AI + in-browser NLP |
-| On-premise (GPU) | `true` | `llm` | Cloud AI + local LLM (Ollama, vLLM, llama.cpp) |
-| On-premise (CPU) | `true` | `ner` | Cloud AI + spaCy NER for standard hardware |
-| Air-gapped | `false` | `llm` or `ner` | No cloud connection at all |
-
-## Docker
-
-### Pre-built images
-
-Pre-built images are published to GitHub Container Registry on every release:
+The desktop app lives in `desktop/`:
 
 ```bash
-# Standard image (serves at /)
-docker pull ghcr.io/datenlabor-bmz/easy-redact:latest
-docker run -p 3000:3000 --env-file .env ghcr.io/datenlabor-bmz/easy-redact:latest
-
-# Image with BASE_PATH=/easyredact (serves at /easyredact/)
-docker pull ghcr.io/datenlabor-bmz/easy-redact-with-base-path:latest
-docker run -p 3000:3000 --env-file .env ghcr.io/datenlabor-bmz/easy-redact-with-base-path:latest
+cd desktop
+npm ci
+npm run fetch:models   # downloads the NER model (about 0.9 GB) into desktop/models
+npm run build:server   # builds the bundled server
+npm start              # runs the app
+npm run pack           # packages it into desktop/dist
 ```
 
-### Building from source
+`npm run smoke` starts the app, checks it and exits. With `LOCALREDACT_SMOKE_DOCX=/path/to/file.docx` it also converts that file, opens the result and waits for the model's findings. It fails if anything tried to reach another machine.
 
-The Dockerfile bundles LibreOffice (DOCX conversion), Python + uv, and the German spaCy model (`de_core_news_lg`). By default it sets `LOCAL_AI=ner`:
+Configuration is read from environment variables; `.env.example` lists them. The desktop app sets what it needs itself.
 
-```bash
-docker build -t easy-redact .
-docker run -p 3000:3000 --env-file .env easy-redact
-```
+## How the offline guarantee is enforced
 
-For production deployment on `linux/amd64` (e.g. when building on Apple Silicon):
+- The app's windows cannot resolve any name but localhost, and every request to another machine is cancelled and recorded (`desktop/network/lockdown.js`).
+- The bundled server refuses every connection that does not stay on the computer (`desktop/network/guard.js`).
+- The self-test above runs on macOS, Windows and Linux for every change.
 
-```bash
-docker buildx build --platform linux/amd64 -t easy-redact .
-```
+## Tech stack
 
-To use a local LLM instead of spaCy, override `LOCAL_AI` at runtime:
-
-```bash
-docker run -p 3000:3000 -e LOCAL_AI=llm --env-file .env easy-redact
-```
-
-DOCX upload and spaCy NLP are only available in the Docker build; they return HTTP 501 otherwise.
-
-### Subpath deployment
-
-To serve the app under a subpath (e.g. `acme.bund.de/easyredact/`), pass `BASE_PATH` at build time:
-
-```bash
-docker build --platform linux/amd64 --build-arg BASE_PATH=/easyredact -t easy-redact .
-```
-
-This sets the Next.js `basePath`, which rewrites all routes, assets, and API endpoints. Configure nginx to forward requests without stripping the prefix:
-
-```nginx
-location /easyredact/ {
-    proxy_pass http://127.0.0.1:3000;
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-}
-```
-
-## Tech Stack
-
-- **Next.js 15** (App Router) + **React 19**
-- **MuPDF** 1.27 — PDF rendering and redacted export via WASM + Comlink web worker
-- **OpenAI SDK** — standard `OpenAI` client for both cloud and local LLMs; streaming chat completions with function calling
-- **spaCy** (`de_core_news_lg`) — German NER, invoked via a Python script with `uv run`
-- **Tailwind CSS v4** + **shadcn/ui** (Radix primitives)
-- **IndexedDB** (via `idb`) — client-side persistence for files, session state, and chat history
-
-## See Also
-
-- [`datenlabor-bmz/redaction-ui`](https://github.com/datenlabor-bmz/redaction-ui) — standalone React component library (`@datenlabor-bmz/redaction-ui`) for PDF viewing and redaction, published to npm for use in other applications
-- [`datenlabor-bmz/redaction-rules`](https://github.com/datenlabor-bmz/redaction-rules) — machine-readable FOI exemption rules by jurisdiction; used in FOI mode either at runtime or as a bundled local copy (see `REDACTION_RULES_SOURCE`)
+- **Electron** shell with a bundled **Next.js 15** / **React 19** server bound to 127.0.0.1
+- **MuPDF** — PDF rendering and redacted export (WASM)
+- **transformers.js** with **ONNX Runtime** — NER in the window (WebGPU) or in the server process (native)
+- **docx-preview** and optionally **LibreOffice** — DOCX to PDF
+- **Tailwind CSS v4** + **shadcn/ui**
+- **IndexedDB** — local storage of documents, session and chat
 
 ## License
 
-AGPL-3.0. This project uses [MuPDF](https://mupdf.com/licensing/) which is licensed under the GNU Affero General Public License.
+AGPL-3.0. This project uses [MuPDF](https://mupdf.com/licensing/), which is licensed under the GNU Affero General Public License.
 
 ## Credits
 

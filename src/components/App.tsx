@@ -1,7 +1,6 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Link } from '@/lib/navigation'
 import { useTranslations, useLocale } from 'next-intl'
 import { LocaleSwitcher } from '@/components/LocaleSwitcher'
 import { Upload, FileText, X, AlertCircle, Minus, Plus, Download, FileLock2, Search, Type, BoxSelect, Loader2, Bot } from 'lucide-react'
@@ -21,7 +20,6 @@ import type { Redaction, Session, PageData, DocumentPage, RedactionSuggestion, T
 import { getRulesForJurisdiction } from '@/lib/redaction-rules'
 import { OnboardingModal } from '@/components/OnboardingModal'
 import { RedactConfirmDialog } from '@/components/RedactConfirmDialog'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 
 export default function App() {
   const t = useTranslations('App')
@@ -57,7 +55,6 @@ export default function App() {
   const [converting, setConverting] = useState(false)
   const [selectMode, setSelectMode] = useState<'text' | 'freehand'>('text')
   const [redactConfirmOpen, setRedactConfirmOpen] = useState(false)
-  const [pendingAiModeSwitch, setPendingAiModeSwitch] = useState<'cloud' | 'local' | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [searchMatchInfo, setSearchMatchInfo] = useState({ current: 0, total: 0 })
   const searchNavigateRef = useRef<((dir: 1|-1) => void) | null>(null)
@@ -159,40 +156,6 @@ export default function App() {
       return next
     })
   }, [])
-
-  // Whether both old and new mode use the ChatPanel (preservable chat)
-  const usesChatPanel = (mode: 'cloud' | 'local') => mode === 'cloud' || localAi === 'llm'
-
-  // Mode is a session-wide setting, so switching to/from an incompatible panel
-  // (chat <-> NlpPanel) clears every open document's chat, not just one.
-  const clearAllChats = (docKeys: string[]) => {
-    docKeys.forEach(k => { deleteChat(k) })
-    setChatsByDoc({})
-  }
-
-  const handleModeChange = useCallback((mode: 'cloud' | 'local') => {
-    if (mode === session?.aiMode) return
-    const hasSuggested = session?.redactions.some(r => r.status === 'suggested')
-    if (hasSuggested) { setPendingAiModeSwitch(mode); return }
-    updateSession({ aiMode: mode })
-    // Only clear chat when switching between incompatible panels
-    if (!usesChatPanel(mode) || !usesChatPanel(session!.aiMode)) {
-      clearAllChats(session!.documents.map(d => d.idbKey))
-    }
-  }, [session, updateSession])
-
-  const confirmModeSwitch = useCallback(() => {
-    if (!pendingAiModeSwitch) return
-    setSession(prev => {
-      const next = { ...prev!, aiMode: pendingAiModeSwitch, redactions: prev!.redactions.filter(r => r.status !== 'suggested') }
-      saveSession(next)
-      return next
-    })
-    if (!usesChatPanel(pendingAiModeSwitch) || !usesChatPanel(session!.aiMode)) {
-      clearAllChats(session!.documents.map(d => d.idbKey))
-    }
-    setPendingAiModeSwitch(null)
-  }, [pendingAiModeSwitch, session])
 
   const addRedaction = useCallback((r: Redaction) => {
     setSession(prev => {
@@ -484,10 +447,6 @@ export default function App() {
             onFoiJurisdictionChange={id => updateSession({ foiJurisdiction: id })} />
           <div className='w-px h-4 bg-border shrink-0' />
           <LocaleSwitcher />
-          <Link href='/about'
-            className='h-7 px-2 text-xs text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition-colors whitespace-nowrap inline-flex items-center'>
-            {t('about')}
-          </Link>
         </div>
       </header>
 
@@ -675,18 +634,18 @@ export default function App() {
 
         {/* Right — Chat or NLP panel */}
         <div style={{ width: rightWidth }} className='shrink-0 flex flex-col min-w-0 border-l'>
-          {session.aiMode === 'local' && (localAi === 'ner' || localAi === 'ner-browser') ? (
+          {localAi === 'ner' || localAi === 'ner-browser' ? (
             <NlpPanel documentPages={documentPages}
               redactions={session.redactions}
               onSuggestionsReceived={(s, tr, pr, rm) => handleSuggestionsReceived(activeDocKey, s, tr, pr, rm)}
               onRemoveByReason={handleRemoveByReason}
               onRestoreByReason={handleRestoreByReason}
-              modeSelector={<ModeSelector aiMode={session.aiMode} onAiModeChange={handleModeChange} />} />
+              modeSelector={<ModeSelector />} />
           ) : openDocuments.length === 0 ? (
             <div className='flex flex-col h-full bg-card'>
               <div className='shrink-0 h-11 flex items-center justify-between gap-1 px-3 border-b bg-muted/50'>
                 <span className='text-xs font-medium text-foreground'>{tChat('header')}</span>
-                <ModeSelector aiMode={session.aiMode} onAiModeChange={handleModeChange} />
+                <ModeSelector />
               </div>
               <div className='flex-1 flex flex-col items-center justify-center text-center py-12 gap-3 px-4'>
                 <Bot className='h-10 w-10 text-muted-foreground/40' />
@@ -712,7 +671,7 @@ export default function App() {
                   redactions={session.redactions}
                   onSuggestionsReceived={(s, tr, pr, rm) => handleSuggestionsReceived(doc.idbKey, s, tr, pr, rm)}
                   onMessagesChange={msgs => { setChatsByDoc(prev => ({ ...prev, [doc.idbKey]: msgs })); saveChat(doc.idbKey, msgs) }}
-                  modeSelector={<ModeSelector aiMode={session.aiMode} onAiModeChange={handleModeChange} />} />
+                  modeSelector={<ModeSelector />} />
               </div>
             ))
           )}
@@ -724,7 +683,7 @@ export default function App() {
 
       <OnboardingModal
         open={!session.onboardingAccepted}
-        onAccept={aiMode => updateSession({ onboardingAccepted: true, aiMode })}
+        onAccept={() => updateSession({ onboardingAccepted: true })}
       />
 
       <RedactConfirmDialog
@@ -733,18 +692,6 @@ export default function App() {
         onCancel={() => setRedactConfirmOpen(false)}
       />
 
-      <Dialog open={!!pendingAiModeSwitch} onOpenChange={open => !open && setPendingAiModeSwitch(null)}>
-        <DialogContent className='sm:max-w-sm'>
-          <DialogHeader>
-            <DialogTitle>{t('modeSwitchTitle')}</DialogTitle>
-            <DialogDescription>{t('modeSwitchDesc')}</DialogDescription>
-          </DialogHeader>
-          <div className='flex gap-2 justify-end'>
-            <Button variant='outline' size='sm' onClick={() => setPendingAiModeSwitch(null)}>{t('modeSwitchCancel')}</Button>
-            <Button size='sm' onClick={confirmModeSwitch}>{t('modeSwitchConfirm')}</Button>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }

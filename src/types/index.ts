@@ -116,7 +116,9 @@ export interface PageRangeSuggestion {
 
 // ── Session ───────────────────────────────────────────────────────────────────
 
-export type AiMode = 'cloud' | 'local'
+// LocalRedact has no cloud mode. The type is kept so that stored sessions and
+// the chat request keep their shape.
+export type AiMode = 'local'
 export type RedactionMode = 'pii' | 'foi'
 
 export interface DocumentMeta {
@@ -209,7 +211,7 @@ export interface RedactionSnapshot {
 
 export interface ChatRequest {
   messages: ApiChatMessage[]
-  model: 'cloud' | 'local'
+  model: 'local'
   aiMode: AiMode
   redactionMode: RedactionMode
   foiJurisdiction?: string

@@ -64,9 +64,10 @@ export async function loadSession(): Promise<Session> {
   // Migrate old 'consent' field to 'aiMode'
   if ('consent' in raw && !('aiMode' in raw)) {
     const { consent, ...rest } = raw as Session & { consent?: string }
-    return { ...rest, aiMode: (consent as Session['aiMode']) ?? 'local' }
+    return { ...rest, aiMode: 'local' }
   }
-  return raw
+  // Sessions stored by a build that still had a cloud mode come back as local.
+  return { ...raw, aiMode: 'local' }
 }
 
 export async function saveSession(session: Session) {

@@ -1,13 +1,8 @@
 import { pipeline as _pipeline, env, type TokenClassificationPipeline } from '@huggingface/transformers'
 import * as Comlink from 'comlink'
+import { NER_DTYPE, NER_MODEL, toEntities, type AggregatedEntity, type NerEntity } from '@/lib/ner-entities'
 
-export interface NerEntity {
-  text: string
-  type: string
-  score: number
-  startIndex: number
-  endIndex: number
-}
+export type { NerEntity }
 
 export type ProgressEvent =
   | { status: 'initiate' | 'download' | 'done'; file: string }
@@ -21,37 +16,15 @@ export interface ModelSource {
   basePath: string
 }
 
-// A PII detector rather than a general NER model: it labels private persons,
-// addresses, e-mail addresses, phone numbers, dates, account numbers, URLs and
-// secrets. Licensed Apache-2.0.
-const MODEL = 'openai/privacy-filter'
-const MIN_SCORE = 0.5
-
-interface AggregatedEntity { entity_group: string; word: string; score: number }
-
 let classifier: TokenClassificationPipeline | null = null
 
-// The pipeline returns each span as text only. Locate it in the page, moving a
-// cursor forward so repeated names map to successive occurrences.
-function toEntities(output: AggregatedEntity[], originalText: string): NerEntity[] {
-  const entities: NerEntity[] = []
-  let cursor = 0
-  for (const span of output) {
-    if (span.score < MIN_SCORE) continue
-    const text = span.word.trim().replace(/[,;:.]+$/, '').trim()
-    if (text.length < 2) continue
-    let startIndex = originalText.indexOf(text, cursor)
-    if (startIndex === -1) startIndex = originalText.indexOf(text)
-    if (startIndex !== -1) cursor = startIndex + text.length
-    entities.push({
-      text,
-      type: span.entity_group,
-      score: span.score,
-      startIndex,
-      endIndex: startIndex === -1 ? -1 : startIndex + text.length,
-    })
-  }
-  return entities
+// `navigator.gpu` also exists on machines whose graphics hardware cannot
+// actually be used (virtual machines, remote desktops, old drivers), so only an
+// adapter that can really be obtained counts.
+async function hasUsableGpu(): Promise<boolean> {
+  const gpu = (navigator as Navigator & { gpu?: { requestAdapter(): Promise<unknown> } }).gpu
+  if (!gpu) return false
+  try { return !!(await gpu.requestAdapter()) } catch { return false }
 }
 
 async function loadModel(onProgress: (e: ProgressEvent) => void, source?: ModelSource) {
@@ -65,11 +38,14 @@ async function loadModel(onProgress: (e: ProgressEvent) => void, source?: ModelS
     env.useBrowserCache = false
     if (env.backends.onnx.wasm) env.backends.onnx.wasm.wasmPaths = `${source.basePath}/ort/`
   }
-  const device = (navigator as Navigator & { gpu?: unknown }).gpu ? 'webgpu' : 'wasm'
   const fileProgress = new Map<string, number>()
   let lastReported = -1
-  classifier = await (_pipeline as any)('token-classification', MODEL, {
-    device, dtype: 'q4',
+  // The model's compressed format only runs on the graphics card in a browser;
+  // without one the caller falls back to the server (see browser-nlp.ts).
+  if (!(await hasUsableGpu())) throw new Error('No usable graphics card for the NER model')
+
+  classifier = await (_pipeline as any)('token-classification', NER_MODEL, {
+    device: 'webgpu', dtype: NER_DTYPE,
     progress_callback: (e: any) => {
       if (e.status === 'progress' && e.file) {
         fileProgress.set(e.file, e.progress ?? 0)

@@ -100,7 +100,10 @@ export function NlpPanel({ documentPages, redactions, onSuggestionsReceived, onR
           setModelStatus('ready')
         }
       })
-    ).catch(() => setModelStatus('error'))
+    ).catch(err => {
+      console.error('NER model failed to load:', err)
+      setModelStatus('error')
+    })
   }, [modelStatus])
 
   const retryModelLoad = useCallback(() => setModelStatus('idle'), [])

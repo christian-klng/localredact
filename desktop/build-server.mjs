@@ -51,6 +51,11 @@ if (hasModels) {
   }
 }
 
+// The desktop app starts the server through an entry file that installs the
+// network guard first; both have to sit next to server.js.
+await cp(join(root, 'desktop', 'network', 'guard.js'), join(standalone, 'network-guard.js'))
+await cp(join(root, 'desktop', 'network', 'server-entry.js'), join(standalone, 'server-entry.js'))
+
 // File tracing can pull the desktop shell itself into the server bundle.
 await rm(join(standalone, 'desktop'), { recursive: true, force: true })
 

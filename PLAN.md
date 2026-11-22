@@ -65,6 +65,15 @@ Stufe 1 funktioniert auf jedem Rechner. Stufe 2 braucht ein Modell von mehreren 
 - Interne Dienste binden nur an `127.0.0.1` und verlangen ein pro Start erzeugtes Token.
 - Ein automatischer Test fährt einen kompletten Durchlauf und schlägt fehl, sobald eine einzige ausgehende Verbindung versucht wird.
 
+**Stand der Umsetzung (21.11.2026):**
+
+- Fenster: Namensauflösung ist für alles außer localhost abgeschaltet, jede Anfrage an einen anderen Rechner wird abgebrochen und protokolliert, Hintergrunddienste von Chromium und die Rechtschreibprüfung sind aus (`desktop/network/lockdown.js`).
+- Server-Prozess: Eine Sperre verweigert jede Verbindung, die nicht auf dem eigenen Rechner bleibt (`desktop/network/guard.js`). Sie wird über eine eigene Startdatei geladen, weil Electron das Laden per `--require` im Hilfsprozess ignoriert.
+- Sicherheitsrichtlinie der Seiten nennt im Desktop-Build keinen fremden Host mehr.
+- Selbsttest der paketierten App (`--smoke`): DOCX umwandeln, PDF öffnen, Analyse mit dem mitgelieferten Modell abwarten. Er schlägt fehl, wenn ein Fenster oder der Server eine Verbindung nach außen versucht hat, wenn die Server-Sperre nicht geladen ist oder wenn ein Kontrollversuch nicht abgefangen wurde.
+
+Noch offen: der spätere LLM-Dienst (`llama-server`) ist ein eigenes Programm und braucht eine eigene Absicherung; Verbindungen, die Chromium an Sperre und Namensauflösung vorbei direkt an eine IP-Adresse richten würde, sind nicht durch eine Messung auf Netzwerkebene ausgeschlossen.
+
 ## 4. Wasserdichte Schwärzung
 
 EasyRedact entfernt Text bereits über MuPDF aus dem PDF. LocalRedact ergänzt eine Absicherung beim Export:

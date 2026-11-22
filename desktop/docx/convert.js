@@ -11,6 +11,7 @@ const os = require('node:os')
 const path = require('node:path')
 const { pathToFileURL } = require('node:url')
 const { sanitizeDocx } = require('./sanitize')
+const { recordBlocked } = require('../network/lockdown')
 
 const RENDER_PAGE = path.join(__dirname, 'render.html')
 const LIBREOFFICE_TIMEOUT_MS = 120_000
@@ -58,6 +59,7 @@ function getRenderSession() {
   const appRoot = pathToFileURL(path.join(__dirname, '..')).href
   renderSession.webRequest.onBeforeRequest((details, callback) => {
     const allowed = details.url.startsWith(appRoot) || /^(data|blob):/.test(details.url)
+    if (!allowed) recordBlocked(details.url)
     callback({ cancel: !allowed })
   })
   return renderSession

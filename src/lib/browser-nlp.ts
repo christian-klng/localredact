@@ -41,11 +41,32 @@ function getWorker(): Remote<WorkerApi> {
   return worker
 }
 
-export async function loadBrowserNlpModel(onProgress: (e: ProgressEvent) => void) {
-  await getWorker().loadModel(Comlink.proxy(onProgress), {
-    local: nerModelsLocal,
-    basePath: process.env.NEXT_PUBLIC_BASE_PATH ?? '',
+const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? ''
+
+// Where the model runs: in this window on the graphics card, or - when that is
+// not possible - in the server process on the processor.
+let runsOnServer = false
+
+async function analyzeOnServer(pages: { pageIndex: number; text: string }[]): Promise<{ pageIndex: number; entities: NerEntity[] }[]> {
+  const res = await fetch(`${basePath}/api/ner`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pages }),
   })
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `NER request failed (${res.status})`)
+  return (await res.json()).pages
+}
+
+export async function loadBrowserNlpModel(onProgress: (e: ProgressEvent) => void) {
+  try {
+    await getWorker().loadModel(Comlink.proxy(onProgress), { local: nerModelsLocal, basePath })
+    runsOnServer = false
+  } catch (err) {
+    console.warn('NER model cannot run in this window, using the server instead:', err)
+    await analyzeOnServer([]) // loads the model there
+    runsOnServer = true
+    onProgress({ status: 'ready' })
+  }
 }
 
 export async function analyzePagesInBrowser(
@@ -53,22 +74,29 @@ export async function analyzePagesInBrowser(
   onPageDone?: (pageIndex: number, suggestions: RedactionSuggestion[]) => void,
 ): Promise<RedactionSuggestion[]> {
   const all: RedactionSuggestion[] = []
-  await getWorker().analyzePages(
-    pages,
-    Comlink.proxy((pageIndex: number, entities: NerEntity[]) => {
-      const suggestions = entities.map(e => {
-        const category = CATEGORY[e.type] ?? OTHER
-        return {
-          text: e.text,
-          pageIndex,
-          confidence: category.confidence,
-          personGroup: category.group,
-          reason: category.reason,
-        }
-      })
-      all.push(...suggestions)
-      onPageDone?.(pageIndex, suggestions)
-    }),
-  )
+  const collect = (pageIndex: number, entities: NerEntity[]) => {
+    const suggestions = entities.map(e => {
+      const category = CATEGORY[e.type] ?? OTHER
+      return {
+        text: e.text,
+        pageIndex,
+        confidence: category.confidence,
+        personGroup: category.group,
+        reason: category.reason,
+      }
+    })
+    all.push(...suggestions)
+    onPageDone?.(pageIndex, suggestions)
+  }
+
+  if (runsOnServer) {
+    // One page per request, so progress is reported as it happens.
+    for (const page of pages) {
+      const [result] = await analyzeOnServer([page])
+      collect(page.pageIndex, result?.entities ?? [])
+    }
+  } else {
+    await getWorker().analyzePages(pages, Comlink.proxy(collect))
+  }
   return all
 }

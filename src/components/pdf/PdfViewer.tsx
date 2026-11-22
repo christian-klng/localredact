@@ -154,49 +154,64 @@ export function PdfViewer({
 
     const init = async () => {
       const load = ++loadCountRef.current
+      // The worker holds one document, replaced by every load. Once a newer load
+      // has started, this one must not touch the worker again: it would either
+      // read the newer document's pages under this document's name or put this
+      // document back in place of the newer one. Checking right before each
+      // call is enough, because a request sent before the newer load's own
+      // requests is also answered before them.
+      const OVERTAKEN = Symbol('overtaken')
+      const current = <T,>(call: () => Promise<T>): Promise<T> => {
+        if (loadCountRef.current !== load) throw OVERTAKEN
+        return call()
+      }
       setLoadedKey(null)
       setPages([])
       setMetadata({})
       setFieldsToRemove(new Set())
       setIsLoading(true)
-      const buf = await file.arrayBuffer()
-      const existing = await loadDocumentAndAnnotations(buf)
-      existing.forEach((ann: any) => {
-        const parts = ann.quads.map((q: number[]) => quadToPart(q))
-        onRedactionAdd({ id: generateUUID(), documentKey: '', pageIndex: ann.pageIndex, parts, status: 'suggested', confidence: 'high', shouldApply: true })
-      })
-
-      const total = await countPages()
-      // Fired as soon as the true page count is known — well before extraction of
-      // all of them finishes — so callers waiting for "every page done" have a
-      // reliable target to compare against per document, instead of having to
-      // infer completeness from another piece of state that may currently belong
-      // to a different, previously-active document.
-      onPageCountKnown?.(total, documentKey ?? '')
-      const stack: PageData[] = []
-      for (let i = 0; i < total; i++) {
-        const pngData = await renderPage(i)
-        const content = JSON.parse(await getPageContent(i))
-        const lines = content.blocks.flatMap((b: any) => b.lines)
-        const words = await getPageWords(i)
-        if (onPageTextExtracted) {
-          onPageTextExtracted(lines.map(lineText).join(' '), i, documentKey ?? '')
-        }
-        stack.push({
-          image: URL.createObjectURL(new Blob([new Uint8Array(pngData)], { type: 'image/png' })),
-          bounds: await getPageBounds(i),
-          content, lines, words,
+      try {
+        const buf = await file.arrayBuffer()
+        const existing = await current(() => loadDocumentAndAnnotations(buf))
+        existing.forEach((ann: any) => {
+          const parts = ann.quads.map((q: number[]) => quadToPart(q))
+          onRedactionAdd({ id: generateUUID(), documentKey: documentKey ?? '', pageIndex: ann.pageIndex, parts, status: 'suggested', confidence: 'high', shouldApply: true })
         })
+
+        const total = await current(() => countPages())
+        // Fired as soon as the true page count is known — well before extraction of
+        // all of them finishes — so callers waiting for "every page done" have a
+        // reliable target to compare against per document, instead of having to
+        // infer completeness from another piece of state that may currently belong
+        // to a different, previously-active document.
+        onPageCountKnown?.(total, documentKey ?? '')
+        const stack: PageData[] = []
+        for (let i = 0; i < total; i++) {
+          const pngData = await current(() => renderPage(i))
+          const content = JSON.parse(await current(() => getPageContent(i)))
+          const lines = content.blocks.flatMap((b: any) => b.lines)
+          const words = await current(() => getPageWords(i))
+          if (onPageTextExtracted) {
+            onPageTextExtracted(lines.map(lineText).join(' '), i, documentKey ?? '')
+          }
+          stack.push({
+            image: URL.createObjectURL(new Blob([new Uint8Array(pngData)], { type: 'image/png' })),
+            bounds: await current(() => getPageBounds(i)),
+            content, lines, words,
+          })
+        }
+        const meta = await current(() => getMetadata())
+        // A newer load has started meanwhile; its pages are the ones to show.
+        if (loadCountRef.current !== load) return
+        setPages(stack)
+        setLoadedKey(documentKey ?? '')
+        onPagesLoaded?.(stack)
+        setMetadata(meta)
+        setFieldsToRemove(new Set(Object.keys(meta)))
+        setIsLoading(false)
+      } catch (err) {
+        if (err !== OVERTAKEN) throw err
       }
-      // A newer load has started meanwhile; its pages are the ones to show.
-      if (loadCountRef.current !== load) return
-      setPages(stack)
-      setLoadedKey(documentKey ?? '')
-      onPagesLoaded?.(stack)
-      const meta = await getMetadata()
-      setMetadata(meta)
-      setFieldsToRemove(new Set(Object.keys(meta)))
-      setIsLoading(false)
     }
     init()
   }, [isWorkerInitialized, file])

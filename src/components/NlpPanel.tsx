@@ -42,7 +42,8 @@ const NER_OPTIONS = isBrowser ? ALL_NER_OPTIONS.filter(o => o.key !== 'ner:ORG')
 interface NlpPanelProps {
   documentPages?: DocumentPage[]
   redactions?: Redaction[]
-  onSuggestionsReceived: (suggestions: RedactionSuggestion[], textRanges: TextRangeSuggestion[], pageRanges: PageRangeSuggestion[], remove: string[]) => void
+  // Called once per document that has results - never with a mix of documents.
+  onSuggestionsReceived: (documentKey: string, suggestions: RedactionSuggestion[], textRanges: TextRangeSuggestion[], pageRanges: PageRangeSuggestion[], remove: string[]) => void
   onRemoveByReason: (reason: string) => void
   onRestoreByReason: (reason: string) => void
   modeSelector?: React.ReactNode
@@ -50,6 +51,19 @@ interface NlpPanelProps {
 
 export function NlpPanel({ documentPages, redactions, onSuggestionsReceived, onRemoveByReason, onRestoreByReason, modeSelector }: NlpPanelProps) {
   const t = useTranslations('NlpPanel')
+
+  // The panel analyses the pages of every open document, so a batch of results
+  // can span several of them. Each document gets its own results.
+  const emitByDocument = useCallback((results: RedactionSuggestion[]) => {
+    const byDocument = new Map<string, RedactionSuggestion[]>()
+    for (const s of results) {
+      const key = s.documentKey ?? ''
+      // A copy, because the same result is emitted again whenever its category
+      // is switched back on, and the viewer applies each object it receives once.
+      byDocument.set(key, [...(byDocument.get(key) ?? []), { ...s }])
+    }
+    for (const [documentKey, suggestions] of byDocument) onSuggestionsReceived(documentKey, suggestions, [], [], [])
+  }, [onSuggestionsReceived])
   const [enabled, setEnabled] = useState<Set<CategoryKey>>(() => {
     const s = new Set<CategoryKey>(['regex:phone', 'regex:email', 'regex:iban'])
     if (nerEnabled) s.add('ner:PER')
@@ -81,10 +95,10 @@ export function NlpPanel({ documentPages, redactions, onSuggestionsReceived, onR
       } else {
         onRestoreByReason(reason)
         const toAdd = allResults.filter(s => s.reason === reason)
-        if (toAdd.length) onSuggestionsReceived(toAdd, [], [], [])
+        emitByDocument(toAdd)
       }
     })
-  }, [enabled, allResults, onRemoveByReason, onRestoreByReason, onSuggestionsReceived])
+  }, [enabled, allResults, onRemoveByReason, onRestoreByReason, emitByDocument])
 
   // Load browser NLP model eagerly
   useEffect(() => {
@@ -136,7 +150,7 @@ export function NlpPanel({ documentPages, redactions, onSuggestionsReceived, onR
       setAllResults(prev => [...prev, ...tagged])
       const activeReasons = new Set([...enabledSet].map(reasonForKey))
       const filtered = tagged.filter(s => activeReasons.has(s.reason!))
-      if (filtered.length) onSuggestionsReceived(filtered, [], [], [])
+      emitByDocument(filtered)
     } else {
       const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_PATH ?? ''}/api/nlp`, {
         method: 'POST',
@@ -151,9 +165,9 @@ export function NlpPanel({ documentPages, redactions, onSuggestionsReceived, onR
       setAllResults(prev => [...prev, ...tagged])
       const activeReasons = new Set([...enabledSet].map(reasonForKey))
       const filtered = tagged.filter(s => activeReasons.has(s.reason!))
-      if (filtered.length) onSuggestionsReceived(filtered, [], [], [])
+      emitByDocument(filtered)
     }
-  }, [onSuggestionsReceived])
+  }, [emitByDocument])
 
   // Auto-run when new (unanalyzed) pages appear
   useEffect(() => {

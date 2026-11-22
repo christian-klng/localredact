@@ -34,7 +34,9 @@ export interface PdfViewerProps {
   pendingSuggestions?: RedactionSuggestion[]
   pendingTextRanges?: TextRangeSuggestion[]
   pendingPageRanges?: PageRangeSuggestion[]
-  onSuggestionsApplied?: () => void
+  // Called with exactly what was applied, so that only those entries are
+  // cleared and anything that arrived in the meantime stays queued.
+  onSuggestionsApplied?: (documentKey: string, applied: { suggestions?: RedactionSuggestion[]; textRanges?: TextRangeSuggestion[]; pageRanges?: PageRangeSuggestion[] }) => void
   exportRef?: React.MutableRefObject<((apply: boolean) => void) | null>
   foiRules?: RedactionRule[]
   redactionMode?: RedactionMode
@@ -59,6 +61,25 @@ export function PdfViewer({
     getPageContent, getPageBounds, getPageWords, getMetadata, getRedactedDocument, searchPage } = useMupdf()
 
   const [pages, setPages] = useState<PageData[]>([])
+  // The document whose pages are in `pages`. While another document is still
+  // loading, `pages` belongs to the previous one, and suggestions for the new
+  // document must not be searched in it.
+  const [loadedKey, setLoadedKey] = useState<string | null>(null)
+  // Suggestions an apply run has already taken on, so that a second run started
+  // by newly arrived ones does not apply the earlier ones again.
+  const takenRef = useRef(new WeakSet<object>())
+  // The document on screen right now. The PDF worker holds one document at a
+  // time, so a run that started on another document must stop: its searches
+  // would be answered from the wrong file.
+  const docKeyRef = useRef(documentKey ?? '')
+  docKeyRef.current = documentKey ?? ''
+  // Counts document loads. Switching away and straight back shows the same
+  // document again, but the worker has loaded another one in between, so the
+  // key alone cannot tell that a run was overtaken.
+  const loadCountRef = useRef(0)
+  // The redactions as of the latest render, for code that runs across several.
+  const redactionsRef = useRef(redactions)
+  redactionsRef.current = redactions
   const [isLoading, setIsLoading] = useState(false)
   const [currentHighlight, setCurrentHighlight] = useState<HighlightInProgress | null>(null)
   const [metadata, setMetadata] = useState<Record<string, string>>({})
@@ -135,60 +156,87 @@ export function PdfViewer({
     if (!isWorkerInitialized || !file) return
 
     const init = async () => {
+      const load = ++loadCountRef.current
+      // The worker holds one document, replaced by every load. Once a newer load
+      // has started, this one must not touch the worker again: it would either
+      // read the newer document's pages under this document's name or put this
+      // document back in place of the newer one. Checking right before each
+      // call is enough, because a request sent before the newer load's own
+      // requests is also answered before them.
+      const OVERTAKEN = Symbol('overtaken')
+      const current = <T,>(call: () => Promise<T>): Promise<T> => {
+        if (loadCountRef.current !== load) throw OVERTAKEN
+        return call()
+      }
+      setLoadedKey(null)
       setPages([])
       setMetadata({})
       setFieldsToRemove(new Set())
       setIsLoading(true)
-      const buf = await file.arrayBuffer()
-      const existing = await loadDocumentAndAnnotations(buf)
-      existing.forEach((ann: any) => {
-        const parts = ann.quads.map((q: number[]) => quadToPart(q))
-        onRedactionAdd({ id: generateUUID(), documentKey: '', pageIndex: ann.pageIndex, parts, status: 'suggested', confidence: 'high', shouldApply: true })
-      })
-
-      const total = await countPages()
-      // Fired as soon as the true page count is known — well before extraction of
-      // all of them finishes — so callers waiting for "every page done" have a
-      // reliable target to compare against per document, instead of having to
-      // infer completeness from another piece of state that may currently belong
-      // to a different, previously-active document.
-      onPageCountKnown?.(total, documentKey ?? '')
-      const stack: PageData[] = []
-      for (let i = 0; i < total; i++) {
-        const pngData = await renderPage(i)
-        const content = JSON.parse(await getPageContent(i))
-        const lines = content.blocks.flatMap((b: any) => b.lines)
-        const words = await getPageWords(i)
-        if (onPageTextExtracted) {
-          onPageTextExtracted(lines.map(lineText).join(' '), i, documentKey ?? '')
-        }
-        stack.push({
-          image: URL.createObjectURL(new Blob([new Uint8Array(pngData)], { type: 'image/png' })),
-          bounds: await getPageBounds(i),
-          content, lines, words,
+      try {
+        const buf = await file.arrayBuffer()
+        const existing = await current(() => loadDocumentAndAnnotations(buf))
+        existing.forEach((ann: any) => {
+          const parts = ann.quads.map((q: number[]) => quadToPart(q))
+          onRedactionAdd({ id: generateUUID(), documentKey: documentKey ?? '', pageIndex: ann.pageIndex, parts, status: 'suggested', confidence: 'high', shouldApply: true })
         })
+
+        const total = await current(() => countPages())
+        // Fired as soon as the true page count is known — well before extraction of
+        // all of them finishes — so callers waiting for "every page done" have a
+        // reliable target to compare against per document, instead of having to
+        // infer completeness from another piece of state that may currently belong
+        // to a different, previously-active document.
+        onPageCountKnown?.(total, documentKey ?? '')
+        const stack: PageData[] = []
+        for (let i = 0; i < total; i++) {
+          const pngData = await current(() => renderPage(i))
+          const content = JSON.parse(await current(() => getPageContent(i)))
+          const lines = content.blocks.flatMap((b: any) => b.lines)
+          const words = await current(() => getPageWords(i))
+          if (onPageTextExtracted) {
+            onPageTextExtracted(lines.map(lineText).join(' '), i, documentKey ?? '')
+          }
+          stack.push({
+            image: URL.createObjectURL(new Blob([new Uint8Array(pngData)], { type: 'image/png' })),
+            bounds: await current(() => getPageBounds(i)),
+            content, lines, words,
+          })
+        }
+        const meta = await current(() => getMetadata())
+        // A newer load has started meanwhile; its pages are the ones to show.
+        if (loadCountRef.current !== load) return
+        setPages(stack)
+        setLoadedKey(documentKey ?? '')
+        onPagesLoaded?.(stack)
+        setMetadata(meta)
+        setFieldsToRemove(new Set(Object.keys(meta)))
+        setIsLoading(false)
+      } catch (err) {
+        if (err !== OVERTAKEN) throw err
       }
-      setPages(stack)
-      onPagesLoaded?.(stack)
-      const meta = await getMetadata()
-      setMetadata(meta)
-      setFieldsToRemove(new Set(Object.keys(meta)))
-      setIsLoading(false)
     }
     init()
   }, [isWorkerInitialized, file])
 
   // Apply AI suggestions by searching text in PDF
   useEffect(() => {
-    if (!pendingSuggestions?.length || !pages.length) return
+    const docKey = documentKey ?? ''
+    if (!pendingSuggestions?.length || !pages.length || loadedKey !== docKey) return
+    const fresh = pendingSuggestions.filter(s => !takenRef.current.has(s))
+    if (!fresh.length) return
+    fresh.forEach(s => takenRef.current.add(s))
+    const load = loadCountRef.current
+    const overtaken = () => docKeyRef.current !== docKey || loadCountRef.current !== load
     ;(async () => {
       // Each match is judged on where it lands, not on its text: it is redundant
       // only when its box already sits inside a redacted area. A longer match
       // overlapping a shorter one still contributes its extra area, and a name
       // repeated elsewhere on the page keeps its own box.
-      const covered = redactions
-        .filter(r => r.status !== 'ignored')
-        .map(r => ({ page: r.pageIndex, parts: r.parts }))
+      // What this run has added itself; the stored redactions are read fresh at
+      // each check (see `isCovered`), so that a second run started in the
+      // meantime sees what this one has stored and does not store it again.
+      const added: { page: number; parts: RedactionPart[] }[] = []
 
       const TOLERANCE = 1
       const isInside = (inner: RedactionPart, outer: RedactionPart) =>
@@ -197,8 +245,13 @@ export function PdfViewer({
         inner.x + inner.width <= outer.x + outer.width + TOLERANCE &&
         inner.y + inner.height <= outer.y + outer.height + TOLERANCE
 
-      const isCovered = (page: number, parts: RedactionPart[]) =>
-        parts.every(p => covered.some(c => c.page === page && c.parts.some(q => isInside(p, q))))
+      const isCovered = (page: number, parts: RedactionPart[]) => {
+        const covered = [
+          ...redactionsRef.current.filter(r => r.status !== 'ignored').map(r => ({ page: r.pageIndex, parts: r.parts })),
+          ...added,
+        ]
+        return parts.every(p => covered.some(c => c.page === page && c.parts.some(q => isInside(p, q))))
+      }
 
       // A name (or other exact string) the model flags on one page is rarely
       // confined to it — it typically recurs in a header, a signature, or a later
@@ -209,7 +262,7 @@ export function PdfViewer({
       // Entries missing a usable `text` (a malformed tool call the server failed
       // to catch) are skipped here too rather than crashing the loop below.
       const byText = new Map<string, RedactionSuggestion>()
-      for (const s of pendingSuggestions) {
+      for (const s of fresh) {
         if (typeof s.text === 'string' && s.text.trim() && !byText.has(s.text)) byText.set(s.text, s)
       }
 
@@ -223,7 +276,11 @@ export function PdfViewer({
       const rawPageText = pages.map(pageText)
       const lowerPageText = rawPageText.map(t => t.toLowerCase())
 
+      // Texts whose search finished while this document was still on screen.
+      const searched = new Set<string>()
+      let interrupted = false
       for (const s of byText.values()) {
+        if (overtaken()) { interrupted = true; break }
         // One bad suggestion (or an unexpected worker error) must never abort the
         // rest of the batch — that used to turn "5 suggested" into "2 applied"
         // whenever a single entry tripped over anything downstream.
@@ -261,13 +318,17 @@ export function PdfViewer({
             const quads = await searchPage(p, effectiveText) as number[][][]
             return [p, quads] as const
           }))
+          // The user may have switched documents while the searches were
+          // running; their results cannot be trusted then and are dropped.
+          if (overtaken()) { interrupted = true; break }
+          searched.add(s.text)
           for (const [p, quads] of perPage) {
             for (const matchQuads of quads) {
               const parts = matchQuads.map(q => quadToPart(q as number[]))
               if (isCovered(p, parts)) continue
-              covered.push({ page: p, parts })
+              added.push({ page: p, parts })
               onRedactionAdd({
-                id: generateUUID(), documentKey: '', pageIndex: p, parts,
+                id: generateUUID(), documentKey: docKey, pageIndex: p, parts,
                 searchText: effectiveText,
                 status: 'suggested', confidence: s.confidence,
                 person: s.person, personGroup: s.personGroup,
@@ -280,16 +341,27 @@ export function PdfViewer({
           console.error('[PdfViewer] failed to apply suggestion', s, err)
         }
       }
-      onSuggestionsApplied?.()
+      // After an interruption only what was really searched counts as applied.
+      // The rest stays queued and is picked up when the document is shown again.
+      const applied = interrupted ? fresh.filter(s => searched.has(s.text)) : fresh
+      fresh.filter(s => !applied.includes(s)).forEach(s => takenRef.current.delete(s))
+      onSuggestionsApplied?.(docKey, { suggestions: applied })
     })()
-    // `pages.length` is a dependency because suggestions can arrive before the
+    // `loadedKey` is a dependency because suggestions can arrive before the
     // document has finished loading, and would otherwise never be applied.
-  }, [pendingSuggestions, pages.length])
+  }, [pendingSuggestions, pages.length, loadedKey])
 
   // Apply text-range and page-range suggestions
   useEffect(() => {
     const hasRanges = (pendingTextRanges?.length ?? 0) + (pendingPageRanges?.length ?? 0)
-    if (!hasRanges || !pages.length) return
+    const docKey = documentKey ?? ''
+    if (!hasRanges || !pages.length || loadedKey !== docKey) return
+    const textRanges = (pendingTextRanges ?? []).filter(r => !takenRef.current.has(r))
+    const pageRanges = (pendingPageRanges ?? []).filter(r => !takenRef.current.has(r))
+    if (!textRanges.length && !pageRanges.length) return
+    ;[...textRanges, ...pageRanges].forEach(r => takenRef.current.add(r))
+    const load = loadCountRef.current
+    const overtaken = () => docKeyRef.current !== docKey || loadCountRef.current !== load
     ;(async () => {
       const pageRect = (p: number) => {
         const b = pages[p]?.bounds
@@ -299,16 +371,19 @@ export function PdfViewer({
       const addFull = (p: number, meta: Omit<Redaction, 'id' | 'documentKey' | 'pageIndex' | 'parts'>) => {
         const r = pageRect(p)
         if (!r) return
-        onRedactionAdd({ id: generateUUID(), documentKey: '', pageIndex: p, parts: [r], ...meta })
+        onRedactionAdd({ id: generateUUID(), documentKey: docKey, pageIndex: p, parts: [r], ...meta })
       }
 
-      for (const pr of pendingPageRanges ?? []) {
+      for (const pr of pageRanges) {
         const label = `[Seiten ${pr.fromPage + 1}–${pr.toPage + 1}]`
         const base = { searchText: label, status: 'suggested' as const, confidence: pr.confidence, person: pr.person, personGroup: pr.personGroup, reason: pr.reason, rule: pr.rule, isAutoGenerated: true, shouldApply: true }
         for (let p = pr.fromPage; p <= pr.toPage; p++) addFull(p, base)
       }
 
-      for (const tr of pendingTextRanges ?? []) {
+      const searchedRanges: TextRangeSuggestion[] = []
+      let rangesInterrupted = false
+      for (const tr of textRanges) {
+        if (overtaken()) { rangesInterrupted = true; break }
         try {
           const label = `[Bereich: "${tr.startText}"→"${tr.endText}"]`
           const base = { searchText: label, status: 'suggested' as const, confidence: tr.confidence, person: tr.person, personGroup: tr.personGroup, reason: tr.reason, rule: tr.rule, isAutoGenerated: true, shouldApply: true }
@@ -319,6 +394,9 @@ export function PdfViewer({
           const endNeedle = pages[tr.endPage] ? (findFuzzyMatch(pageText(pages[tr.endPage]), tr.endText) ?? tr.endText) : tr.endText
           const startQuads = await searchPage(tr.startPage, startNeedle) as number[][][]
           const endQuads = await searchPage(tr.endPage, endNeedle) as number[][][]
+          // Same as above: results from after a document switch are dropped.
+          if (overtaken()) { rangesInterrupted = true; break }
+          searchedRanges.push(tr)
           const rect0 = pageRect(tr.startPage)
           const rectN = pageRect(tr.endPage)
           if (!rect0 || !rectN) continue
@@ -329,19 +407,23 @@ export function PdfViewer({
             : rectN.y + rectN.height
 
           if (tr.startPage === tr.endPage) {
-            onRedactionAdd({ id: generateUUID(), documentKey: '', pageIndex: tr.startPage, parts: [{ x: rect0.x, y: startY, width: rect0.width, height: Math.max(endY - startY, 4) }], ...base })
+            onRedactionAdd({ id: generateUUID(), documentKey: docKey, pageIndex: tr.startPage, parts: [{ x: rect0.x, y: startY, width: rect0.width, height: Math.max(endY - startY, 4) }], ...base })
           } else {
-            onRedactionAdd({ id: generateUUID(), documentKey: '', pageIndex: tr.startPage, parts: [{ x: rect0.x, y: startY, width: rect0.width, height: rect0.y + rect0.height - startY }], ...base })
+            onRedactionAdd({ id: generateUUID(), documentKey: docKey, pageIndex: tr.startPage, parts: [{ x: rect0.x, y: startY, width: rect0.width, height: rect0.y + rect0.height - startY }], ...base })
             for (let p = tr.startPage + 1; p < tr.endPage; p++) addFull(p, base)
-            onRedactionAdd({ id: generateUUID(), documentKey: '', pageIndex: tr.endPage, parts: [{ x: rectN.x, y: rectN.y, width: rectN.width, height: endY - rectN.y }], ...base })
+            onRedactionAdd({ id: generateUUID(), documentKey: docKey, pageIndex: tr.endPage, parts: [{ x: rectN.x, y: rectN.y, width: rectN.width, height: endY - rectN.y }], ...base })
           }
         } catch (err) {
           console.error('[PdfViewer] failed to apply text range suggestion', tr, err)
         }
       }
-      onSuggestionsApplied?.()
+      // A range that failed for another reason is still done with; only an
+      // interruption leaves ranges queued for the next time.
+      const appliedRanges = rangesInterrupted ? searchedRanges : textRanges
+      textRanges.filter(tr => !appliedRanges.includes(tr)).forEach(tr => takenRef.current.delete(tr))
+      onSuggestionsApplied?.(docKey, { textRanges: appliedRanges, pageRanges })
     })()
-  }, [pendingTextRanges, pendingPageRanges, pages.length])
+  }, [pendingTextRanges, pendingPageRanges, pages.length, loadedKey])
 
   const scrollToPage = (idx: number) => {
     const el = pdfViewerRef.current?.querySelectorAll('[data-page-index]')[idx] as HTMLElement

@@ -159,7 +159,9 @@ export default function App() {
 
   const addRedaction = useCallback((r: Redaction) => {
     setSession(prev => {
-      const next = { ...prev!, redactions: [...prev!.redactions, { ...r, documentKey: activeKeyRef.current }] }
+      // Suggestions name their document; a redaction drawn by hand belongs to the
+      // document on screen.
+      const next = { ...prev!, redactions: [...prev!.redactions, { ...r, documentKey: r.documentKey || activeKeyRef.current }] }
       saveSession(next)
       return next
     })
@@ -209,9 +211,11 @@ export default function App() {
     })
   }, [])
 
-  // `docKey` is the document the calling chat is bound to — every suggestion from
-  // a given chat always belongs to that one document, since chats no longer have
-  // any way to see or target a different one.
+  // `docKey` is the document the suggestions belong to: the one a chat is bound
+  // to, or the one an analysed page came from. They are queued per document and
+  // added to what is already waiting there - a document that is not on screen
+  // keeps its queue until it is opened, and a second batch never replaces a
+  // first one that has not been applied yet.
   const handleSuggestionsReceived = useCallback((docKey: string, suggestions: RedactionSuggestion[], textRanges: TextRangeSuggestion[], pageRanges: PageRangeSuggestion[], remove: string[]) => {
     remove.forEach(id => {
       setSession(prev => {
@@ -222,8 +226,36 @@ export default function App() {
       })
     })
     if (suggestions.length || textRanges.length || pageRanges.length) {
-      setPendingByDoc(prev => ({ ...prev, [docKey]: { suggestions, textRanges, pageRanges } }))
+      setPendingByDoc(prev => {
+        const queued = prev[docKey]
+        return {
+          ...prev,
+          [docKey]: {
+            suggestions: [...(queued?.suggestions ?? []), ...suggestions],
+            textRanges: [...(queued?.textRanges ?? []), ...textRanges],
+            pageRanges: [...(queued?.pageRanges ?? []), ...pageRanges],
+          },
+        }
+      })
     }
+  }, [])
+
+  // Clears exactly what the viewer reports as applied; anything queued since
+  // then stays for the next run.
+  const handleSuggestionsApplied = useCallback((docKey: string, applied: { suggestions?: RedactionSuggestion[]; textRanges?: TextRangeSuggestion[]; pageRanges?: PageRangeSuggestion[] }) => {
+    setPendingByDoc(prev => {
+      const queued = prev[docKey]
+      if (!queued) return prev
+      const rest = {
+        suggestions: queued.suggestions.filter(s => !applied.suggestions?.includes(s)),
+        textRanges: queued.textRanges.filter(r => !applied.textRanges?.includes(r)),
+        pageRanges: queued.pageRanges.filter(r => !applied.pageRanges?.includes(r)),
+      }
+      const next = { ...prev }
+      if (rest.suggestions.length || rest.textRanges.length || rest.pageRanges.length) next[docKey] = rest
+      else delete next[docKey]
+      return next
+    })
   }, [])
 
   const handleFiles = useCallback(async (fileList: FileList | File[]) => {
@@ -588,7 +620,7 @@ export default function App() {
               pendingSuggestions={pendingByDoc[activeDocKey]?.suggestions}
               pendingTextRanges={pendingByDoc[activeDocKey]?.textRanges}
               pendingPageRanges={pendingByDoc[activeDocKey]?.pageRanges}
-              onSuggestionsApplied={() => setPendingByDoc(prev => { const next = { ...prev }; delete next[activeDocKey]; return next })}
+              onSuggestionsApplied={handleSuggestionsApplied}
               exportRef={exportRef}
               onAccept={acceptRedaction} onIgnore={ignoreRedaction}
               foiRules={foiRules}
@@ -637,7 +669,7 @@ export default function App() {
           {localAi === 'ner' || localAi === 'ner-browser' ? (
             <NlpPanel documentPages={documentPages}
               redactions={session.redactions}
-              onSuggestionsReceived={(s, tr, pr, rm) => handleSuggestionsReceived(activeDocKey, s, tr, pr, rm)}
+              onSuggestionsReceived={handleSuggestionsReceived}
               onRemoveByReason={handleRemoveByReason}
               onRestoreByReason={handleRestoreByReason}
               modeSelector={<ModeSelector />} />

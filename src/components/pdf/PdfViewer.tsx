@@ -34,7 +34,9 @@ export interface PdfViewerProps {
   pendingSuggestions?: RedactionSuggestion[]
   pendingTextRanges?: TextRangeSuggestion[]
   pendingPageRanges?: PageRangeSuggestion[]
-  onSuggestionsApplied?: () => void
+  // Called with exactly what was applied, so that only those entries are
+  // cleared and anything that arrived in the meantime stays queued.
+  onSuggestionsApplied?: (documentKey: string, applied: { suggestions?: RedactionSuggestion[]; textRanges?: TextRangeSuggestion[]; pageRanges?: PageRangeSuggestion[] }) => void
   exportRef?: React.MutableRefObject<((apply: boolean) => void) | null>
   foiRules?: RedactionRule[]
   redactionMode?: RedactionMode
@@ -59,6 +61,13 @@ export function PdfViewer({
     getPageContent, getPageBounds, getPageWords, getMetadata, getRedactedDocument, searchPage } = useMupdf()
 
   const [pages, setPages] = useState<PageData[]>([])
+  // The document whose pages are in `pages`. While another document is still
+  // loading, `pages` belongs to the previous one, and suggestions for the new
+  // document must not be searched in it.
+  const [loadedKey, setLoadedKey] = useState<string | null>(null)
+  // Suggestions an apply run has already taken on, so that a second run started
+  // by newly arrived ones does not apply the earlier ones again.
+  const takenRef = useRef(new WeakSet<object>())
   const [isLoading, setIsLoading] = useState(false)
   const [currentHighlight, setCurrentHighlight] = useState<HighlightInProgress | null>(null)
   const [metadata, setMetadata] = useState<Record<string, string>>({})
@@ -135,6 +144,7 @@ export function PdfViewer({
     if (!isWorkerInitialized || !file) return
 
     const init = async () => {
+      setLoadedKey(null)
       setPages([])
       setMetadata({})
       setFieldsToRemove(new Set())
@@ -169,6 +179,7 @@ export function PdfViewer({
         })
       }
       setPages(stack)
+      setLoadedKey(documentKey ?? '')
       onPagesLoaded?.(stack)
       const meta = await getMetadata()
       setMetadata(meta)
@@ -180,7 +191,11 @@ export function PdfViewer({
 
   // Apply AI suggestions by searching text in PDF
   useEffect(() => {
-    if (!pendingSuggestions?.length || !pages.length) return
+    const docKey = documentKey ?? ''
+    if (!pendingSuggestions?.length || !pages.length || loadedKey !== docKey) return
+    const fresh = pendingSuggestions.filter(s => !takenRef.current.has(s))
+    if (!fresh.length) return
+    fresh.forEach(s => takenRef.current.add(s))
     ;(async () => {
       // Each match is judged on where it lands, not on its text: it is redundant
       // only when its box already sits inside a redacted area. A longer match
@@ -209,7 +224,7 @@ export function PdfViewer({
       // Entries missing a usable `text` (a malformed tool call the server failed
       // to catch) are skipped here too rather than crashing the loop below.
       const byText = new Map<string, RedactionSuggestion>()
-      for (const s of pendingSuggestions) {
+      for (const s of fresh) {
         if (typeof s.text === 'string' && s.text.trim() && !byText.has(s.text)) byText.set(s.text, s)
       }
 
@@ -267,7 +282,7 @@ export function PdfViewer({
               if (isCovered(p, parts)) continue
               covered.push({ page: p, parts })
               onRedactionAdd({
-                id: generateUUID(), documentKey: '', pageIndex: p, parts,
+                id: generateUUID(), documentKey: docKey, pageIndex: p, parts,
                 searchText: effectiveText,
                 status: 'suggested', confidence: s.confidence,
                 person: s.person, personGroup: s.personGroup,
@@ -280,16 +295,21 @@ export function PdfViewer({
           console.error('[PdfViewer] failed to apply suggestion', s, err)
         }
       }
-      onSuggestionsApplied?.()
+      onSuggestionsApplied?.(docKey, { suggestions: fresh })
     })()
-    // `pages.length` is a dependency because suggestions can arrive before the
+    // `loadedKey` is a dependency because suggestions can arrive before the
     // document has finished loading, and would otherwise never be applied.
-  }, [pendingSuggestions, pages.length])
+  }, [pendingSuggestions, pages.length, loadedKey])
 
   // Apply text-range and page-range suggestions
   useEffect(() => {
     const hasRanges = (pendingTextRanges?.length ?? 0) + (pendingPageRanges?.length ?? 0)
-    if (!hasRanges || !pages.length) return
+    const docKey = documentKey ?? ''
+    if (!hasRanges || !pages.length || loadedKey !== docKey) return
+    const textRanges = (pendingTextRanges ?? []).filter(r => !takenRef.current.has(r))
+    const pageRanges = (pendingPageRanges ?? []).filter(r => !takenRef.current.has(r))
+    if (!textRanges.length && !pageRanges.length) return
+    ;[...textRanges, ...pageRanges].forEach(r => takenRef.current.add(r))
     ;(async () => {
       const pageRect = (p: number) => {
         const b = pages[p]?.bounds
@@ -299,16 +319,16 @@ export function PdfViewer({
       const addFull = (p: number, meta: Omit<Redaction, 'id' | 'documentKey' | 'pageIndex' | 'parts'>) => {
         const r = pageRect(p)
         if (!r) return
-        onRedactionAdd({ id: generateUUID(), documentKey: '', pageIndex: p, parts: [r], ...meta })
+        onRedactionAdd({ id: generateUUID(), documentKey: docKey, pageIndex: p, parts: [r], ...meta })
       }
 
-      for (const pr of pendingPageRanges ?? []) {
+      for (const pr of pageRanges) {
         const label = `[Seiten ${pr.fromPage + 1}–${pr.toPage + 1}]`
         const base = { searchText: label, status: 'suggested' as const, confidence: pr.confidence, person: pr.person, personGroup: pr.personGroup, reason: pr.reason, rule: pr.rule, isAutoGenerated: true, shouldApply: true }
         for (let p = pr.fromPage; p <= pr.toPage; p++) addFull(p, base)
       }
 
-      for (const tr of pendingTextRanges ?? []) {
+      for (const tr of textRanges) {
         try {
           const label = `[Bereich: "${tr.startText}"→"${tr.endText}"]`
           const base = { searchText: label, status: 'suggested' as const, confidence: tr.confidence, person: tr.person, personGroup: tr.personGroup, reason: tr.reason, rule: tr.rule, isAutoGenerated: true, shouldApply: true }
@@ -329,19 +349,19 @@ export function PdfViewer({
             : rectN.y + rectN.height
 
           if (tr.startPage === tr.endPage) {
-            onRedactionAdd({ id: generateUUID(), documentKey: '', pageIndex: tr.startPage, parts: [{ x: rect0.x, y: startY, width: rect0.width, height: Math.max(endY - startY, 4) }], ...base })
+            onRedactionAdd({ id: generateUUID(), documentKey: docKey, pageIndex: tr.startPage, parts: [{ x: rect0.x, y: startY, width: rect0.width, height: Math.max(endY - startY, 4) }], ...base })
           } else {
-            onRedactionAdd({ id: generateUUID(), documentKey: '', pageIndex: tr.startPage, parts: [{ x: rect0.x, y: startY, width: rect0.width, height: rect0.y + rect0.height - startY }], ...base })
+            onRedactionAdd({ id: generateUUID(), documentKey: docKey, pageIndex: tr.startPage, parts: [{ x: rect0.x, y: startY, width: rect0.width, height: rect0.y + rect0.height - startY }], ...base })
             for (let p = tr.startPage + 1; p < tr.endPage; p++) addFull(p, base)
-            onRedactionAdd({ id: generateUUID(), documentKey: '', pageIndex: tr.endPage, parts: [{ x: rectN.x, y: rectN.y, width: rectN.width, height: endY - rectN.y }], ...base })
+            onRedactionAdd({ id: generateUUID(), documentKey: docKey, pageIndex: tr.endPage, parts: [{ x: rectN.x, y: rectN.y, width: rectN.width, height: endY - rectN.y }], ...base })
           }
         } catch (err) {
           console.error('[PdfViewer] failed to apply text range suggestion', tr, err)
         }
       }
-      onSuggestionsApplied?.()
+      onSuggestionsApplied?.(docKey, { textRanges, pageRanges })
     })()
-  }, [pendingTextRanges, pendingPageRanges, pages.length])
+  }, [pendingTextRanges, pendingPageRanges, pages.length, loadedKey])
 
   const scrollToPage = (idx: number) => {
     const el = pdfViewerRef.current?.querySelectorAll('[data-page-index]')[idx] as HTMLElement

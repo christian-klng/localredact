@@ -83,6 +83,9 @@ export interface DocumentPage {
 }
 
 export interface RedactionSuggestion {
+  // Set when a result is tied to one document out of several (page analysis);
+  // absent for chat suggestions, which belong to the chat's document.
+  documentKey?: string
   text: string          // search text to locate in PDF
   pageIndex: number
   confidence: RedactionConfidence

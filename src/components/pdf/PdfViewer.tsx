@@ -68,6 +68,15 @@ export function PdfViewer({
   // Suggestions an apply run has already taken on, so that a second run started
   // by newly arrived ones does not apply the earlier ones again.
   const takenRef = useRef(new WeakSet<object>())
+  // The document on screen right now. The PDF worker holds one document at a
+  // time, so a run that started on another document must stop: its searches
+  // would be answered from the wrong file.
+  const docKeyRef = useRef(documentKey ?? '')
+  docKeyRef.current = documentKey ?? ''
+  // Counts document loads. Switching away and straight back shows the same
+  // document again, but the worker has loaded another one in between, so the
+  // key alone cannot tell that a run was overtaken.
+  const loadCountRef = useRef(0)
   const [isLoading, setIsLoading] = useState(false)
   const [currentHighlight, setCurrentHighlight] = useState<HighlightInProgress | null>(null)
   const [metadata, setMetadata] = useState<Record<string, string>>({})
@@ -144,6 +153,7 @@ export function PdfViewer({
     if (!isWorkerInitialized || !file) return
 
     const init = async () => {
+      const load = ++loadCountRef.current
       setLoadedKey(null)
       setPages([])
       setMetadata({})
@@ -178,6 +188,8 @@ export function PdfViewer({
           content, lines, words,
         })
       }
+      // A newer load has started meanwhile; its pages are the ones to show.
+      if (loadCountRef.current !== load) return
       setPages(stack)
       setLoadedKey(documentKey ?? '')
       onPagesLoaded?.(stack)
@@ -196,6 +208,8 @@ export function PdfViewer({
     const fresh = pendingSuggestions.filter(s => !takenRef.current.has(s))
     if (!fresh.length) return
     fresh.forEach(s => takenRef.current.add(s))
+    const load = loadCountRef.current
+    const overtaken = () => docKeyRef.current !== docKey || loadCountRef.current !== load
     ;(async () => {
       // Each match is judged on where it lands, not on its text: it is redundant
       // only when its box already sits inside a redacted area. A longer match
@@ -238,7 +252,11 @@ export function PdfViewer({
       const rawPageText = pages.map(pageText)
       const lowerPageText = rawPageText.map(t => t.toLowerCase())
 
+      // Texts whose search finished while this document was still on screen.
+      const searched = new Set<string>()
+      let interrupted = false
       for (const s of byText.values()) {
+        if (overtaken()) { interrupted = true; break }
         // One bad suggestion (or an unexpected worker error) must never abort the
         // rest of the batch — that used to turn "5 suggested" into "2 applied"
         // whenever a single entry tripped over anything downstream.
@@ -276,6 +294,10 @@ export function PdfViewer({
             const quads = await searchPage(p, effectiveText) as number[][][]
             return [p, quads] as const
           }))
+          // The user may have switched documents while the searches were
+          // running; their results cannot be trusted then and are dropped.
+          if (overtaken()) { interrupted = true; break }
+          searched.add(s.text)
           for (const [p, quads] of perPage) {
             for (const matchQuads of quads) {
               const parts = matchQuads.map(q => quadToPart(q as number[]))
@@ -295,7 +317,11 @@ export function PdfViewer({
           console.error('[PdfViewer] failed to apply suggestion', s, err)
         }
       }
-      onSuggestionsApplied?.(docKey, { suggestions: fresh })
+      // After an interruption only what was really searched counts as applied.
+      // The rest stays queued and is picked up when the document is shown again.
+      const applied = interrupted ? fresh.filter(s => searched.has(s.text)) : fresh
+      fresh.filter(s => !applied.includes(s)).forEach(s => takenRef.current.delete(s))
+      onSuggestionsApplied?.(docKey, { suggestions: applied })
     })()
     // `loadedKey` is a dependency because suggestions can arrive before the
     // document has finished loading, and would otherwise never be applied.
@@ -310,6 +336,8 @@ export function PdfViewer({
     const pageRanges = (pendingPageRanges ?? []).filter(r => !takenRef.current.has(r))
     if (!textRanges.length && !pageRanges.length) return
     ;[...textRanges, ...pageRanges].forEach(r => takenRef.current.add(r))
+    const load = loadCountRef.current
+    const overtaken = () => docKeyRef.current !== docKey || loadCountRef.current !== load
     ;(async () => {
       const pageRect = (p: number) => {
         const b = pages[p]?.bounds
@@ -328,7 +356,10 @@ export function PdfViewer({
         for (let p = pr.fromPage; p <= pr.toPage; p++) addFull(p, base)
       }
 
+      const searchedRanges: TextRangeSuggestion[] = []
+      let rangesInterrupted = false
       for (const tr of textRanges) {
+        if (overtaken()) { rangesInterrupted = true; break }
         try {
           const label = `[Bereich: "${tr.startText}"→"${tr.endText}"]`
           const base = { searchText: label, status: 'suggested' as const, confidence: tr.confidence, person: tr.person, personGroup: tr.personGroup, reason: tr.reason, rule: tr.rule, isAutoGenerated: true, shouldApply: true }
@@ -339,6 +370,9 @@ export function PdfViewer({
           const endNeedle = pages[tr.endPage] ? (findFuzzyMatch(pageText(pages[tr.endPage]), tr.endText) ?? tr.endText) : tr.endText
           const startQuads = await searchPage(tr.startPage, startNeedle) as number[][][]
           const endQuads = await searchPage(tr.endPage, endNeedle) as number[][][]
+          // Same as above: results from after a document switch are dropped.
+          if (overtaken()) { rangesInterrupted = true; break }
+          searchedRanges.push(tr)
           const rect0 = pageRect(tr.startPage)
           const rectN = pageRect(tr.endPage)
           if (!rect0 || !rectN) continue
@@ -359,7 +393,11 @@ export function PdfViewer({
           console.error('[PdfViewer] failed to apply text range suggestion', tr, err)
         }
       }
-      onSuggestionsApplied?.(docKey, { textRanges, pageRanges })
+      // A range that failed for another reason is still done with; only an
+      // interruption leaves ranges queued for the next time.
+      const appliedRanges = rangesInterrupted ? searchedRanges : textRanges
+      textRanges.filter(tr => !appliedRanges.includes(tr)).forEach(tr => takenRef.current.delete(tr))
+      onSuggestionsApplied?.(docKey, { textRanges: appliedRanges, pageRanges })
     })()
   }, [pendingTextRanges, pendingPageRanges, pages.length, loadedKey])
 

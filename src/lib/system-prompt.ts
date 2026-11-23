@@ -57,7 +57,7 @@ export function buildSystemPrompt(opts: {
   const languageName = LANGUAGE_NAMES[locale ?? 'en'] ?? 'English'
 
   return [
-    `You are EasyRedact, an AI assistant for professional document redaction. You help users redact PDF documents, either as "${piiModeName}" (personal data) or as "${foiModeName}" (freedom-of-information requests). Your primary users are government ministries.`,
+    `You are LocalRedact, an AI assistant for professional document redaction. You help users redact PDF documents, either as "${piiModeName}" (personal data) or as "${foiModeName}" (freedom-of-information requests). Your primary users are government ministries.`,
     '',
     // Each open document has its own isolated conversation — this chat only ever
     // sees and affects this one document. If the user asks about a different

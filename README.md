@@ -37,6 +37,8 @@ npm run pack           # packages it into desktop/dist
 
 Configuration is read from environment variables; `.env.example` lists them. The desktop app sets what it needs itself.
 
+All icons are generated from one drawing, `desktop/icons/source.svg` (the "lock-keyhole" icon from [Lucide](https://lucide.dev), ISC licence). After changing it, run `desktop/node_modules/.bin/electron desktop/icons/render-source.js` and then `python3 desktop/icons/make-icons.py` (needs Pillow, and macOS for the `.icns` file), and commit the results.
+
 ## How the offline guarantee is enforced
 
 - The app's windows cannot resolve any name but localhost, and every request to another machine is cancelled and recorded (`desktop/network/lockdown.js`).
@@ -63,7 +65,7 @@ What this does not replace: LocalRedact has not had an independent security audi
 
 ## License
 
-AGPL-3.0. This project uses [MuPDF](https://mupdf.com/licensing/), which is licensed under the GNU Affero General Public License.
+AGPL-3.0. This project uses [MuPDF](https://mupdf.com/licensing/), which is licensed under the GNU Affero General Public License. The app icon is derived from a [Lucide](https://lucide.dev) icon (ISC licence).
 
 ## Credits
 

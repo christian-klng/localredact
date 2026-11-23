@@ -265,3 +265,5 @@ Privacy Filter übersah zwei Straßenadressen und schnitt die IBAN um zwei Ziffe
 - Verkauf ist erlaubt; Käufer dürfen die App aber weitergeben und verändern.
 
 **Noch zu prüfen:** die Bibliothek für den DOCX-Konverter, sobald sie gewählt ist.
+
+**App-Symbol:** Das Schloss ist das Symbol „lock-keyhole“ aus Lucide (ISC-Lizenz, Lizenztext in `desktop/icons/LICENSE-lucide.txt`). Eine zuerst vorgesehene Vorlage von Magnific wurde verworfen, weil deren Lizenz die Nutzung als Logo und die Weitergabe der Datei verbietet.

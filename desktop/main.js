@@ -151,6 +151,8 @@ async function createWindow(origin) {
     width: 1440,
     height: 900,
     show: !SMOKE,
+    // macOS takes the icon from the app bundle; elsewhere the window carries it.
+    icon: path.join(__dirname, 'icon.png'),
     webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, spellcheck: false },
   })
   // The window only ever shows the bundled app.

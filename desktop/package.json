@@ -25,6 +25,7 @@
     "files": [
       "main.js",
       "selftest-documents.js",
+      "icon.png",
       "docx/**",
       "network/**",
       "package.json"
@@ -33,19 +34,22 @@
       "target": [
         "dmg"
       ],
-      "category": "public.app-category.productivity"
+      "category": "public.app-category.productivity",
+      "icon": "build/icon.icns"
     },
     "win": {
       "target": [
         "nsis"
-      ]
+      ],
+      "icon": "build/icon.ico"
     },
     "linux": {
       "target": [
         "AppImage"
       ],
       "category": "Office",
-      "executableName": "localredact"
+      "executableName": "localredact",
+      "icon": "build/icons"
     },
     "afterPack": "./after-pack.js"
   },

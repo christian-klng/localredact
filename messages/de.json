@@ -74,7 +74,7 @@
   },
   "Onboarding": {
     "title": "Bevor Sie beginnen",
-    "subtitle": "Bitte lesen Sie diese Hinweise, bevor Sie EasyRedact verwenden.",
+    "subtitle": "Bitte lesen Sie diese Hinweise, bevor Sie LocalRedact verwenden.",
     "reviewTitle": "KI-Vorschläge stets selbst prüfen",
     "reviewDesc": "Die KI kann Schwärzungen übersehen oder falsche Vorschläge machen. Sie tragen die persönliche Verantwortung für die Prüfung aller Vorschläge vor dem Export.",
     "localLabel": "Lokale KI",

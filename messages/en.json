@@ -74,7 +74,7 @@
   },
   "Onboarding": {
     "title": "Before you start",
-    "subtitle": "Please take a moment to read these notices before using EasyRedact.",
+    "subtitle": "Please take a moment to read these notices before using LocalRedact.",
     "reviewTitle": "Always review AI suggestions yourself",
     "reviewDesc": "The AI can miss redactions or flag incorrect passages. You are personally responsible for checking every suggestion before exporting.",
     "localLabel": "Local AI",

@@ -467,10 +467,8 @@ export default function App() {
       {/* Header */}
       <header className='shrink-0 flex items-center gap-2 px-4 border-b bg-muted/50 h-11'>
         <div className='flex items-center gap-2 shrink-0'>
-          <div className='w-7 h-7 rounded-lg bg-primary flex items-center justify-center'>
-            <span className='text-primary-foreground text-xs font-bold'>E</span>
-          </div>
-          <span className='font-semibold text-sm'>EasyRedact</span>
+          <img src={`${process.env.NEXT_PUBLIC_BASE_PATH ?? ''}/logo.png`} alt='' className='w-7 h-7' />
+          <span className='font-semibold text-sm'>LocalRedact</span>
         </div>
         <div className='ml-auto flex items-center gap-1.5'>
           <FoiSelector redactionMode={session.redactionMode}

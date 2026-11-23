@@ -3,6 +3,8 @@
 import { openDB, type IDBPDatabase } from 'idb'
 import type { Session, ChatMessage } from '@/types'
 
+// The name predates the fork. It stays, because renaming it would make the
+// documents and sessions people have stored unreachable.
 const DB_NAME = 'easy-redact'
 const DB_VERSION = 1
 

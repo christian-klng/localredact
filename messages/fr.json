@@ -74,7 +74,7 @@
   },
   "Onboarding": {
     "title": "Avant de commencer",
-    "subtitle": "Prenez un moment pour lire ces informations avant d'utiliser EasyRedact.",
+    "subtitle": "Prenez un moment pour lire ces informations avant d'utiliser LocalRedact.",
     "reviewTitle": "Vérifiez toujours les suggestions de l'IA",
     "reviewDesc": "L'IA peut manquer certains passages ou en signaler d'incorrects. Vous êtes personnellement responsable de la vérification de chaque suggestion avant tout export.",
     "localLabel": "IA locale (sur votre serveur)",

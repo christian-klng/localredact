@@ -74,7 +74,7 @@
   },
   "Onboarding": {
     "title": "开始之前",
-    "subtitle": "使用 EasyRedact 前，请阅读以下注意事项。",
+    "subtitle": "使用 LocalRedact 前，请阅读以下注意事项。",
     "reviewTitle": "务必亲自核查 AI 建议",
     "reviewDesc": "AI 可能遗漏某些内容，也可能错误标记无需处理的段落。导出前，您需对每条建议进行核查，并对结果承担个人责任。",
     "localLabel": "本地 AI（您的服务器）",

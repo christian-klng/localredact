@@ -3,6 +3,8 @@ import * as Comlink from 'comlink'
 import * as mupdf from 'mupdf'
 import { PDFDocument } from 'mupdf'
 import type { Quad, Rect } from 'mupdf'
+import { exportDocument, findInvisibleText, takeAnnotations, verifyExport } from '@/lib/pdf-export'
+import type { ExportAnnotation, ExportReport, InvisibleText } from '@/lib/pdf-export'
 
 export const MUPDF_LOADED = 'MUPDF_LOADED'
 
@@ -56,18 +58,16 @@ export class MupdfWorker {
   loadDocumentAndAnnotations(document: ArrayBuffer): any[] {
     this.loadDocument(document)
     if (!this.pdfdocument) throw new Error('Document not loaded')
-    const annotations = []
-    for (let i = 0; i < this.getPageCount(); i++) {
-      const page = this.pdfdocument.loadPage(i)
-      const pageAnnotations = page.getAnnotations()
-      for (const annotation of pageAnnotations) {
-        const quads = annotation.getQuadPoints()
-        const content = annotation.getContents()
-        annotations.push({ quads, content, pageIndex: i })
-      }
-      for (const annotation of pageAnnotations) {
-        page.deleteAnnotation(annotation)
-      }
+    const annotations = takeAnnotations(this.pdfdocument)
+    // What is filled into form fields is not part of the page text. Drawing the
+    // fields into the page makes it visible to the analysis and removable by a
+    // redaction, like everything else on the page.
+    try {
+      let fields = 0
+      for (let i = 0; i < this.getPageCount(); i++) fields += this.pdfdocument.loadPage(i).getWidgets().length
+      if (fields) this.pdfdocument.bake(false, true)
+    } catch (err) {
+      console.error('Form fields could not be drawn into the page:', err)
     }
     return annotations
   }
@@ -191,59 +191,24 @@ export class MupdfWorker {
     return result
   }
 
-  getRedactedDocument(annotations: any[], applyRedactions: boolean = true, fieldsToRemove: string[] = [], locale: string = 'en') {
+  // The export itself and the check of its result live in pdf-export.ts. The
+  // check only applies to the final export: a preview keeps everything.
+  getRedactedDocument(annotations: ExportAnnotation[], applyRedactions: boolean = true, fieldsToRemove: string[] = [], locale: string = 'en'): { blob: Blob; report: ExportReport | null } {
     if (!this.pdfdocument) throw new Error('Document not loaded')
 
-    const doc = mupdf.Document.openDocument(
-      this.pdfdocument.saveToBuffer().asUint8Array(),
-      'application/pdf'
-    ) as PDFDocument
-
-    for (const annotation of annotations) {
-      const pageNumber = annotation.position.pageNumber
-      const page = doc.loadPage(pageNumber)
-      const redaction = page.createAnnotation('Redact')
-      redaction.setContents(annotation.content)
-      redaction.setQuadPoints(annotation.position.quads)
-      if (applyRedactions) {
-        redaction.applyRedaction(1, 2)
-        const textAnnotation = page.createAnnotation('FreeText')
-        textAnnotation.setContents(annotation.content)
-        textAnnotation.setRect(annotation.position.rect)
-        textAnnotation.setDefaultAppearance('Helvetica', 8, [1, 1, 1])
-      }
-    }
-
-    for (let i = 0; i < doc.countPages(); i++) {
-      const page = doc.loadPage(i)
-      page.update()
-    }
-
-    if (applyRedactions) {
-      doc.bake()
-    }
-
-    const info = doc.getTrailer().get('Info')
-    if (info && !info.isNull() && info.isDictionary()) {
-      if (fieldsToRemove.length)
-        for (const key of fieldsToRemove) info.delete(key)
-      const label = REDACTED_LABEL[locale] ?? REDACTED_LABEL.en
-      const producer = info.get('Producer')
-      if (producer.isNull() || producer.asString() !== label)
-        info.put('Producer', doc.newString(label))
-    }
-
-    if (fieldsToRemove.length) {
-      try { doc.getTrailer().get('Root').delete('Metadata') } catch {}
-    }
-
-    const output = doc.saveToBuffer(fieldsToRemove.length ? 'garbage,regenerate-id' : '')
-    const pdfBlob = new Blob([output.asUint8Array() as unknown as BlobPart], {
-      type: 'application/pdf'
+    const source = this.pdfdocument.saveToBuffer().asUint8Array().slice()
+    const { pdf, areas, removed } = exportDocument(source, annotations, {
+      apply: applyRedactions,
+      fieldsToRemove,
+      producerLabel: REDACTED_LABEL[locale] ?? REDACTED_LABEL.en,
     })
+    const report = applyRedactions ? verifyExport(pdf, areas, removed, fieldsToRemove) : null
+    return { blob: new Blob([pdf as unknown as BlobPart], { type: 'application/pdf' }), report }
+  }
 
-    doc.destroy()
-    return pdfBlob
+  getInvisibleText(pageIndex: number = 0): InvisibleText[] {
+    if (!this.pdfdocument) throw new Error('Document not loaded')
+    return findInvisibleText(this.pdfdocument, pageIndex)
   }
 }
 

@@ -248,6 +248,48 @@ async function smokeTest(win, origin) {
       result.ner = 'skipped: this build has no bundled model'
     }
 
+    // Export the document just analysed the way a user would and read the
+    // result of the check the app runs on the redacted file. The test document
+    // contains white text on white, which has to have been found and marked.
+    if (typeof result.ner === 'object' && result.ner.persons > 0) {
+      result.export = await run(`
+        const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
+        const click = label => {
+          const button = [...document.querySelectorAll('button')].find(b => b.innerText.trim() === label)
+          button?.click()
+          return !!button
+        }
+        const stored = await new Promise((resolve, reject) => {
+          const open = indexedDB.open('easy-redact')
+          open.onerror = () => reject(open.error)
+          open.onsuccess = () => {
+            const get = open.result.transaction('session').objectStore('session').get('current')
+            get.onerror = () => reject(get.error)
+            get.onsuccess = () => resolve(get.result.redactions)
+          }
+        })
+        const invisibleTextMarked = stored.some(r => r.reason === 'Unsichtbarer Text' && r.status === 'suggested')
+
+        click('Schwärzen')
+        await sleep(500)
+        click('Geschwärztes PDF herunterladen')
+        let title = ''
+        const started = Date.now()
+        while (Date.now() - started < 60000) {
+          title = [...document.querySelectorAll('[role=dialog] h2')].map(h => h.innerText.trim()).find(t => t.startsWith('Prüfung')) ?? ''
+          if (title) break
+          await sleep(300)
+        }
+        const dialog = [...document.querySelectorAll('[role=dialog]')].find(d => d.innerText.includes(title))
+        const report = title ? dialog?.innerText.replace(/\\s+/g, ' ').slice(0, 700) ?? '' : ''
+        // Not saved: a download would open a file dialog nobody answers.
+        click('Zurück zur Bearbeitung')
+        await sleep(300)
+        return { passed: title === 'Prüfung bestanden', title, invisibleTextMarked, report }
+      `)
+      ok &&= result.export.passed && result.export.invisibleTextMarked
+    }
+
     // With the model loaded: several documents at once.
     if (typeof result.ner === 'object' && result.ner.persons > 0) {
       result.severalDocuments = await testSeveralDocuments(win)

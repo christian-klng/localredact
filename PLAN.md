@@ -86,6 +86,23 @@ EasyRedact entfernt Text bereits über MuPDF aus dem PDF. LocalRedact ergänzt e
 
 Dazu kommt ein Testkorpus mit bekannten Problemfällen (Text in Bildern, Ligaturen, Silbentrennung über Zeilen, gedrehte Seiten, Formularfelder, versteckte Ebenen), der bei jedem Build durchläuft.
 
+**Stand der Umsetzung (23.11.2026):** Schritte 1 bis 4 sind umgesetzt (`src/lib/pdf-export.ts`, Tests in `tests/pdf-export.test.mjs`).
+
+- Die Analyse des bisherigen Exports zeigte: Ein geschwärzter Name blieb in einem Lesezeichen stehen; Anhänge, Skripte und Links überlebten immer; ohne ausgewählte Metadatenfelder blieben auch Autor, eingebettete Metadaten, gelöschte Kommentare und verwaiste alte Seiteninhalte in der Datei.
+- Der Export entfernt jetzt zusätzlich zu den geschwärzten Flächen: Dokumenteigenschaften, eingebettete Metadaten, Anhänge, alle Lesezeichen, Kommentare, Skripte, Seitenvorschauen, private Programmdaten, die Strukturdaten für Barrierefreiheit sowie Links, die auf einer Schwärzung liegen oder ein Wort des geschwärzten Texts enthalten. Formularfelder werden vor dem Schwärzen in die Seite gezeichnet. Gespeichert wird immer als neu geschriebene Datei.
+- Die Nachprüfung öffnet die Datei erneut und meldet: Text unter einer Schwärzung, geschwärzten Text in den Daten der Datei, verbliebene Anhänge, Skripte, Lesezeichen, Metadaten, Vorschauen, Formularfelder, Kommentare und frühere Fassungen. Geschwärzter Text, der an nicht markierter Stelle noch lesbar steht, wird als Hinweis gezeigt.
+- Unsichtbarer Text (weiß auf weiß, unsichtbarer Darstellungsmodus, kleiner als 2 Punkt) wird beim Öffnen erkannt und als Schwärzungsvorschlag markiert.
+- Nebenbei behoben: PDFs mit Notiz-Kommentaren ließen sich nicht öffnen, und beim Entfernen von Kommentaren blieb jeder zweite stehen.
+
+Noch offen:
+
+- Maximalmodus (Export als reine Bildseiten).
+- Ausgeblendete Ebenen werden weder erkannt noch entfernt.
+- Formularfelder: Das Einzeichnen ist nicht mit einem echten Formular getestet.
+- Lesezeichen und Strukturdaten werden vollständig entfernt, auch wenn sie nichts Geschwärztes enthalten; das kostet Navigation und Barrierefreiheit.
+- Text, der hinter einem Bild liegt, gilt als sichtbar und wird nicht als unsichtbar erkannt.
+- Der Testkorpus ist ein selbst erzeugtes Dokument; Ligaturen, Silbentrennung über Zeilen, gedrehte Seiten und Dateien echter Programme fehlen.
+
 Hinweis für die Oberfläche: Gescannte PDFs ohne Textebene kann die automatische Erkennung in Version 1 nicht lesen. Die App erkennt solche Seiten und weist darauf hin; manuelles Schwärzen funktioniert dort trotzdem.
 
 ## 5. DOCX

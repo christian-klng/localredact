@@ -6,9 +6,9 @@ name: Desktop build
 on:
   workflow_dispatch:
   pull_request:
-    paths: ['desktop/**', 'src/**', 'package*.json', '.github/workflows/desktop.yml']
+    paths: ['desktop/**', 'src/**', 'tests/**', 'package*.json', '.github/workflows/desktop.yml']
   push:
-    paths: ['desktop/**', 'src/**', 'package*.json', '.github/workflows/desktop.yml']
+    paths: ['desktop/**', 'src/**', 'tests/**', 'package*.json', '.github/workflows/desktop.yml']
 
 jobs:
   build:
@@ -36,7 +36,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
       - uses: actions/setup-python@v5
         with:
@@ -48,6 +48,8 @@ jobs:
       - name: Install desktop dependencies
         run: npm ci
         working-directory: desktop
+      - name: Check the redacted export
+        run: npm test
       - name: Check server network guard
         run: npm run test:network-guard
         working-directory: desktop

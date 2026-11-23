@@ -20,6 +20,8 @@ import type { Redaction, Session, PageData, DocumentPage, RedactionSuggestion, T
 import { getRulesForJurisdiction } from '@/lib/redaction-rules'
 import { OnboardingModal } from '@/components/OnboardingModal'
 import { RedactConfirmDialog } from '@/components/RedactConfirmDialog'
+import { ExportReportDialog } from '@/components/ExportReportDialog'
+import type { ExportReport } from '@/lib/pdf-export'
 
 export default function App() {
   const t = useTranslations('App')
@@ -61,6 +63,7 @@ export default function App() {
   const searchInputRef = useRef<HTMLInputElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const exportRef = useRef<((apply: boolean) => void) | null>(null)
+  const [exportReview, setExportReview] = useState<{ blob: Blob; report: ExportReport } | null>(null)
   // Per-document trigger/silent-context handles, registered by each ChatPanel
   // instance on mount so App can address a specific document's own conversation.
   const chatRefsByDoc = useRef<Record<string, {
@@ -400,7 +403,7 @@ export default function App() {
     getChatRefs(activeKey).trigger.current?.(msg)
   }, [documentPages, pageCountByDoc, activeKey])
 
-  const handleExport = useCallback((blob: Blob, _applied: boolean) => {
+  const download = useCallback((blob: Blob, _applied: boolean) => {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
@@ -410,6 +413,13 @@ export default function App() {
     a.click()
     URL.revokeObjectURL(url)
   }, [])
+
+  // A preview is saved straight away. The redacted file comes with the result
+  // of its check, which is shown first; saving is a decision made on seeing it.
+  const handleExport = useCallback((blob: Blob, applied: boolean, report: ExportReport | null) => {
+    if (applied && report) setExportReview({ blob, report })
+    else download(blob, applied)
+  }, [download])
 
   const handleNavigatePage = useCallback((idx: number) => {
     const el = document.querySelectorAll('[data-page-index]')[idx] as HTMLElement
@@ -720,6 +730,12 @@ export default function App() {
         open={redactConfirmOpen}
         onConfirm={() => { setRedactConfirmOpen(false); exportRef.current?.(true) }}
         onCancel={() => setRedactConfirmOpen(false)}
+      />
+
+      <ExportReportDialog
+        report={exportReview?.report ?? null}
+        onDownload={() => { if (exportReview) download(exportReview.blob, true); setExportReview(null) }}
+        onCancel={() => setExportReview(null)}
       />
 
     </div>

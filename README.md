@@ -12,7 +12,8 @@ LocalRedact is a fork of [EasyRedact](https://github.com/datenlabor-bmz/easy-red
 - **Manual redaction**: draw rectangles or select text directly on the page.
 - **FOI / IFG mode**: assign the exemption clause of a Freedom of Information law to each redaction. The German IFG is bundled.
 - **DOCX**: documents are cleaned first (tracked changes accepted; comments, hidden text and document properties removed) and then converted to PDF, by LibreOffice when it is installed and by a built-in renderer otherwise.
-- **Export**: a preview PDF with highlights for review, and a redacted PDF with the text permanently removed by MuPDF.
+- **Export**: a preview PDF with highlights for review, and a redacted PDF. In the redacted PDF the marked areas are removed from the page (text, the pixels of images, line art), and so is everything else that could repeat them: document properties, embedded metadata, attachments, bookmarks, comments, scripts, page thumbnails and links that name redacted text. The file is then opened again and checked, and the result is shown before it is saved.
+- **Invisible text**: text that is in a page but cannot be seen on it (white on white, invisible render mode, tiny) is marked for redaction when a document is opened.
 - **Chat assistant** (optional, experimental): a language model running locally suggests redactions and explains them. See `PLAN.md` for the state of this.
 
 ## Development
@@ -20,6 +21,7 @@ LocalRedact is a fork of [EasyRedact](https://github.com/datenlabor-bmz/easy-red
 ```bash
 npm ci
 npm run dev            # the web UI alone, at http://localhost:3000
+npm test               # tests of the redacted export (Node 24)
 ```
 
 The desktop app lives in `desktop/`:
@@ -50,7 +52,8 @@ All icons are generated from one drawing, `desktop/icons/source.svg` (the "lock-
 Every change reaches `main` through a pull request. A pull request that touches the app (its code, the desktop shell or their dependencies) runs the checks below and is merged only when they pass; one that changes documentation alone does not run the self-test.
 
 - **Self-test on macOS, Windows and Linux.** The packaged app is started on all three systems. It converts a DOCX, opens the result, waits for the bundled model's findings, and then works with several documents at once. The run fails if anything tried to reach another machine or if a finding ended up with the wrong document. The badge at the top shows the most recent run of this check on `main`.
-- **Automated code review.** Pull requests are reviewed by [CodeRabbit](https://www.coderabbit.ai/). Its comments are public on each [pull request](https://github.com/christian-klng/localredact/pulls?q=is%3Apr); several fixes in this repository go back to them.
+- **Tests of the redacted export.** A test document carries the same name in every place a PDF offers (page text, bookmark, properties, metadata, attachment, comment, link, script, thumbnail, an orphaned object). The tests export it and search the whole decompressed result for what is left.
+- **Automated code review, when requested.** Pull requests can be reviewed by [CodeRabbit](https://www.coderabbit.ai/); for this repository a review has to be triggered by hand and does not happen for every pull request. Where it ran, its comments are public on the [pull request](https://github.com/christian-klng/localredact/pulls?q=is%3Apr); several fixes in this repository go back to them.
 
 What this does not replace: LocalRedact has not had an independent security audit, and the automated checks cover a limited set of situations. Whoever publishes a redacted document remains responsible for checking it. `PLAN.md` lists the known gaps.
 

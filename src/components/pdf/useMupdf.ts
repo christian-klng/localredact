@@ -95,6 +95,11 @@ export function useMupdf() {
     return mupdfWorker.current!.getRedactedDocument(annotations, applyRedactions, fieldsToRemove, locale)
   }, [])
 
+  const getInvisibleText = useCallback((pageIndex: number) => {
+    if (!document.current) throw new Error('Document not loaded')
+    return mupdfWorker.current!.getInvisibleText(pageIndex)
+  }, [])
+
   return {
     isWorkerInitialized,
     loadDocument,
@@ -106,6 +111,7 @@ export function useMupdf() {
     getPageWords,
     getMetadata,
     getRedactedDocument,
+    getInvisibleText,
     searchPage
   }
 }
